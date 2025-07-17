@@ -1,0 +1,13 @@
+.vscode/
+node_modules/
+.git/
+.gitignore
+npm-debug.log
+*.ts
+*.map
+test/
+tests/
+README.md
+bitcoind-tests/
+flake.*
+Cargo.*
