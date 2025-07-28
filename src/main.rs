@@ -68,7 +68,8 @@ fn run() -> Result<(), String> {
             .map(|wit_file| -> Result<simplicityhl::WitnessValues, String> {
                 let wit_path = std::path::Path::new(wit_file);
                 let wit_text = std::fs::read_to_string(wit_path).map_err(|e| e.to_string())?;
-                let witness = serde_json::from_str::<simplicityhl::WitnessValues>(&wit_text).unwrap();
+                let witness =
+                    serde_json::from_str::<simplicityhl::WitnessValues>(&wit_text).unwrap();
                 Ok(witness)
             })
             .transpose()?

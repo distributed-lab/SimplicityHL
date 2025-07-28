@@ -528,7 +528,10 @@ impl ValueConstructible for Value {
     }
 
     fn none(inner: Self::Type) -> Self {
-        Self { inner: ValueInner::Option(None), ty: ResolvedType::option(inner) }
+        Self {
+            inner: ValueInner::Option(None),
+            ty: ResolvedType::option(inner),
+        }
     }
 
     fn some(inner: Self) -> Self {
@@ -541,15 +544,24 @@ impl ValueConstructible for Value {
     fn tuple<I: IntoIterator<Item = Self>>(elements: I) -> Self {
         let values: Arc<[Self]> = elements.into_iter().collect();
         let ty = ResolvedType::tuple(values.iter().map(Value::ty).map(ResolvedType::clone));
-        Self { inner: ValueInner::Tuple(values), ty }
+        Self {
+            inner: ValueInner::Tuple(values),
+            ty,
+        }
     }
 
     fn array<I: IntoIterator<Item = Self>>(elements: I, ty: Self::Type) -> Self {
         let values: Arc<[Self]> = elements.into_iter().collect();
         for value in values.iter() {
-            assert!(value.is_of_type(&ty), "Element {value} is not of expected type {ty}");
+            assert!(
+                value.is_of_type(&ty),
+                "Element {value} is not of expected type {ty}"
+            );
         }
-        Self { ty: ResolvedType::array(ty, values.len()), inner: ValueInner::Array(values) }
+        Self {
+            ty: ResolvedType::array(ty, values.len()),
+            inner: ValueInner::Array(values),
+        }
     }
 
     fn list<I: IntoIterator<Item = Self>>(
@@ -563,21 +575,33 @@ impl ValueConstructible for Value {
             "There must be fewer list elements than the bound {bound}"
         );
         for element in elements.iter() {
-            assert!(element.is_of_type(&ty), "Element {element} is not of expected type {ty}");
+            assert!(
+                element.is_of_type(&ty),
+                "Element {element} is not of expected type {ty}"
+            );
         }
-        Self { inner: ValueInner::List(elements, bound), ty: ResolvedType::list(ty, bound) }
+        Self {
+            inner: ValueInner::List(elements, bound),
+            ty: ResolvedType::list(ty, bound),
+        }
     }
 }
 
 impl From<bool> for Value {
     fn from(value: bool) -> Self {
-        Self { inner: ValueInner::Boolean(value), ty: ResolvedType::boolean() }
+        Self {
+            inner: ValueInner::Boolean(value),
+            ty: ResolvedType::boolean(),
+        }
     }
 }
 
 impl From<UIntValue> for Value {
     fn from(value: UIntValue) -> Self {
-        Self { ty: value.get_type().into(), inner: ValueInner::UInt(value) }
+        Self {
+            ty: value.get_type().into(),
+            inner: ValueInner::UInt(value),
+        }
     }
 }
 
@@ -911,7 +935,10 @@ impl ValueConstructible for StructuralValue {
     fn array<I: IntoIterator<Item = Self>>(elements: I, ty: Self::Type) -> Self {
         let elements: Vec<Self> = elements.into_iter().collect();
         for element in &elements {
-            assert!(element.is_of_type(&ty), "Element {element} is not of expected type {ty}");
+            assert!(
+                element.is_of_type(&ty),
+                "Element {element} is not of expected type {ty}"
+            );
         }
         let tree = BTreeSlice::from_slice(&elements);
         tree.fold(Self::product).unwrap_or_else(Self::unit)
@@ -928,7 +955,10 @@ impl ValueConstructible for StructuralValue {
             "There must be fewer list elements than the bound {bound}"
         );
         for element in &elements {
-            assert!(element.is_of_type(&ty), "Element {element} is not of expected type {ty}");
+            assert!(
+                element.is_of_type(&ty),
+                "Element {element} is not of expected type {ty}"
+            );
         }
         let partition = Partition::from_slice(&elements, bound);
         let process = |block: &[Self], size: usize| -> Self {
@@ -1028,7 +1058,10 @@ impl StructuralValue {
     }
 
     fn destruct<'a>(&'a self, ty: &'a ResolvedType) -> Destructor<'a> {
-        Destructor::Ok { value: self.0.as_ref(), ty }
+        Destructor::Ok {
+            value: self.0.as_ref(),
+            ty,
+        }
     }
 }
 
@@ -1060,7 +1093,10 @@ impl StructuralValue {
 /// from the leaf Simplicity values may fail, in which case the entire tree is, again, ill-typed.
 #[derive(Clone, Debug)]
 enum Destructor<'a> {
-    Ok { value: ValueRef<'a>, ty: &'a ResolvedType },
+    Ok {
+        value: ValueRef<'a>,
+        ty: &'a ResolvedType,
+    },
     WrongType,
 }
 
@@ -1211,8 +1247,10 @@ mod tests {
         assert_eq!("(1, 42, 1337)", &triple.to_string());
         let empty_array = Value::array([], ResolvedType::unit());
         assert_eq!("[]", &empty_array.to_string());
-        let array =
-            Value::array([Value::unit(), Value::unit(), Value::unit()], ResolvedType::unit());
+        let array = Value::array(
+            [Value::unit(), Value::unit(), Value::unit()],
+            ResolvedType::unit(),
+        );
         assert_eq!("[(), (), ()]", &array.to_string());
         let list = Value::list([Value::unit()], ResolvedType::unit(), NonZeroPow2Usize::TWO);
         assert_eq!("list![()]", &list.to_string());
@@ -1261,7 +1299,10 @@ mod tests {
             (
                 "[1, 2, 3]",
                 ResolvedType::array(UIntType::U4.into(), 3),
-                Value::array([Value::u4(1), Value::u4(2), Value::u4(3)], UIntType::U4.into()),
+                Value::array(
+                    [Value::u4(1), Value::u4(2), Value::u4(3)],
+                    UIntType::U4.into(),
+                ),
             ),
             (
                 "list![1, 2, 3]",

@@ -133,7 +133,8 @@ impl CompiledProgram {
 
     /// Access the Simplicity target code, without witness data.
     pub fn commit(&self) -> Arc<CommitNode<Elements>> {
-        named::to_commit_node(&self.simplicity).expect("Compiled SimplicityHL program has type 1 -> 1")
+        named::to_commit_node(&self.simplicity)
+            .expect("Compiled SimplicityHL program has type 1 -> 1")
     }
 
     /// Satisfy the SimplicityHL program with the given `witness_values`.
