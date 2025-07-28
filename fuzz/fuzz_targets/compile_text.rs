@@ -3,7 +3,7 @@
 use arbitrary::Arbitrary;
 use libfuzzer_sys::{fuzz_target, Corpus};
 
-use simfony::{ArbitraryOfType, Arguments};
+use simplicityhl::{ArbitraryOfType, Arguments};
 
 /// The PEST parser is slow for inputs with many open brackets.
 /// Detect some of these inputs to reject them from the corpus.
@@ -38,7 +38,7 @@ fuzz_target!(|data: &[u8]| -> Corpus {
     if slow_input(&program_text) {
         return Corpus::Reject;
     }
-    let template = match simfony::TemplateProgram::new(program_text) {
+    let template = match simplicityhl::TemplateProgram::new(program_text) {
         Ok(x) => x,
         Err(..) => return Corpus::Keep,
     };

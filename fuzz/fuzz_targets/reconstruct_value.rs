@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use simfony::value::{StructuralValue, Value};
+use simplicityhl::value::{StructuralValue, Value};
 
 fuzz_target!(|value: Value| {
     let structural_value = StructuralValue::from(&value);

@@ -11,8 +11,8 @@ pub fn sign_schnorr(secret_key: u32, message: [u8; 32]) -> [u8; 64] {
     key_pair.sign_schnorr(message).serialize()
 }
 
-pub fn xonly_public_key(secret_key: u32) -> simfony::num::U256 {
+pub fn xonly_public_key(secret_key: u32) -> simplicityhl::num::U256 {
     let key_pair = key_pair(secret_key);
     let bytes = key_pair.x_only_public_key().0.serialize();
-    simfony::num::U256::from_byte_array(bytes)
+    simplicityhl::num::U256::from_byte_array(bytes)
 }

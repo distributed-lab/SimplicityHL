@@ -1,4 +1,4 @@
-use simfony::simplicity::jet::Elements;
+use simplicityhl::simplicity::jet::Elements;
 use std::fmt;
 
 #[rustfmt::skip]

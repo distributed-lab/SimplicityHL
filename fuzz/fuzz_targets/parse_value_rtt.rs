@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use simfony::value::Value;
+use simplicityhl::value::Value;
 
 fuzz_target!(|value: Value| {
     let value_string = value.to_string();

@@ -2,8 +2,8 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use simfony::parse::ParseFromStr;
-use simfony::WitnessValues;
+use simplicityhl::parse::ParseFromStr;
+use simplicityhl::WitnessValues;
 
 fuzz_target!(|witness_values: WitnessValues| {
     let witness_text = witness_values.to_string();
