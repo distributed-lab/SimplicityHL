@@ -1,12 +1,12 @@
 use std::fs::File;
 use std::io;
 
-use simfony::simplicity::jet::{Elements, Jet};
-use simfony::types::TypeDeconstructible;
+use simplicityhl::simplicity::jet::{Elements, Jet};
+use simplicityhl::types::TypeDeconstructible;
 
 mod jet;
 
-/// Write a Simfony jet as a Rust function to the sink.
+/// Write a SimplicityHL jet as a Rust function to the sink.
 fn write_jet<W: io::Write>(jet: Elements, w: &mut W) -> io::Result<()> {
     for line in jet::documentation(jet).lines() {
         match line.is_empty() {
@@ -19,7 +19,7 @@ fn write_jet<W: io::Write>(jet: Elements, w: &mut W) -> io::Result<()> {
     writeln!(w, "///")?;
     writeln!(w, "/// {} mWU _(milli weight units)_", jet.cost())?;
     write!(w, "pub fn {jet}(")?;
-    let parameters = simfony::jet::source_type(jet);
+    let parameters = simplicityhl::jet::source_type(jet);
     for (i, ty) in parameters.iter().enumerate() {
         let identifier = (b'a' + i as u8) as char;
         if i == parameters.len() - 1 {
@@ -28,10 +28,10 @@ fn write_jet<W: io::Write>(jet: Elements, w: &mut W) -> io::Result<()> {
             write!(w, "{identifier}: {ty}, ")?;
         }
     }
-    let target = simfony::jet::target_type(jet);
+    let target = simplicityhl::jet::target_type(jet);
     match target.is_unit() {
         true => writeln!(w, ") {{")?,
-        false => writeln!(w, ") -> {} {{", simfony::jet::target_type(jet))?,
+        false => writeln!(w, ") -> {} {{", simplicityhl::jet::target_type(jet))?,
     }
 
     writeln!(w, "    todo!()")?;

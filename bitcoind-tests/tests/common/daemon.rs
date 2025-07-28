@@ -5,7 +5,7 @@ use elements::hex::FromHex;
 use elementsd::bitcoincore_rpc::jsonrpc::serde_json::{json, Value};
 use elementsd::bitcoind::bitcoincore_rpc::RpcApi;
 use elementsd::ElementsD;
-use simfony::elements;
+use simplicityhl::elements;
 
 // We are not using pegins right now, but it might be required in case in future
 // if we extend the tests to check pegins etc.

@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use simfony::parse::{self, ParseFromStr};
+use simplicityhl::parse::{self, ParseFromStr};
 
 fuzz_target!(|parse_program: parse::Program| {
     let program_text = parse_program.to_string();

@@ -1,4 +1,4 @@
-# SimplicityHL (Simfony) extension for VSCode
+# SimplicityHL extension for VSCode
 
 VSCode extension that provides syntax highlighting for the [SimplicityHL](https://github.com/BlockstreamResearch/SimplicityHL) programming language.
 

@@ -3,8 +3,8 @@
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 
-use simfony::error::WithFile;
-use simfony::{ast, named, parse, ArbitraryOfType, Arguments};
+use simplicityhl::error::WithFile;
+use simplicityhl::{ast, named, parse, ArbitraryOfType, Arguments};
 
 fuzz_target!(|data: &[u8]| {
     let mut u = arbitrary::Unstructured::new(data);

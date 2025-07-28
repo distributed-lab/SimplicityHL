@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use elements::hashes::Hash;
 use elements::secp256k1_zkp as secp256k1;
 use secp256k1::hashes::{sha256, HashEngine};
-use simfony::str::WitnessName;
-use simfony::types::TypeConstructible;
-use simfony::value::ValueConstructible;
-use simfony::{elements, ResolvedType, Value};
+use simplicityhl::str::WitnessName;
+use simplicityhl::types::TypeConstructible;
+use simplicityhl::value::ValueConstructible;
+use simplicityhl::{elements, ResolvedType, Value};
 
 mod common;
 use common::daemon::{self, Call};
@@ -49,7 +49,7 @@ fn spend_utxo() {
     }
 }
 
-fn hodl_vault(sighash_all: [u8; 32]) -> simfony::WitnessValues {
+fn hodl_vault(sighash_all: [u8; 32]) -> simplicityhl::WitnessValues {
     let mut witness_values = HashMap::new();
     let oracle_height = 1000;
     witness_values.insert(
@@ -73,24 +73,24 @@ fn hodl_vault(sighash_all: [u8; 32]) -> simfony::WitnessValues {
         WitnessName::from_str_unchecked("OWNER_SIG"),
         Value::byte_array(util::sign_schnorr(2, sighash_all)),
     );
-    simfony::WitnessValues::from(witness_values)
+    simplicityhl::WitnessValues::from(witness_values)
 }
 
-fn p2pk_args() -> simfony::Arguments {
-    simfony::Arguments::from(HashMap::from([(
+fn p2pk_args() -> simplicityhl::Arguments {
+    simplicityhl::Arguments::from(HashMap::from([(
         WitnessName::from_str_unchecked("ALICE_PUBLIC_KEY"),
         Value::u256(util::xonly_public_key(1)),
     )]))
 }
 
-fn p2pk(sighash_all: [u8; 32]) -> simfony::WitnessValues {
-    simfony::WitnessValues::from(HashMap::from([(
+fn p2pk(sighash_all: [u8; 32]) -> simplicityhl::WitnessValues {
+    simplicityhl::WitnessValues::from(HashMap::from([(
         WitnessName::from_str_unchecked("ALICE_SIGNATURE"),
         Value::byte_array(util::sign_schnorr(1, sighash_all)),
     )]))
 }
 
-fn p2pkh(sighash_all: [u8; 32]) -> simfony::WitnessValues {
+fn p2pkh(sighash_all: [u8; 32]) -> simplicityhl::WitnessValues {
     let mut witness_values = HashMap::new();
     witness_values.insert(
         WitnessName::from_str_unchecked("PK"),
@@ -100,10 +100,10 @@ fn p2pkh(sighash_all: [u8; 32]) -> simfony::WitnessValues {
         WitnessName::from_str_unchecked("SIG"),
         Value::byte_array(util::sign_schnorr(1, sighash_all)),
     );
-    simfony::WitnessValues::from(witness_values)
+    simplicityhl::WitnessValues::from(witness_values)
 }
 
-fn p2ms(sighash_all: [u8; 32]) -> simfony::WitnessValues {
+fn p2ms(sighash_all: [u8; 32]) -> simplicityhl::WitnessValues {
     let mut witness_values = HashMap::new();
     let sig1 = Value::some(Value::byte_array(util::sign_schnorr(1, sighash_all)));
     let sig2 = Value::none(ResolvedType::byte_array(64));
@@ -111,5 +111,5 @@ fn p2ms(sighash_all: [u8; 32]) -> simfony::WitnessValues {
     let ty = sig1.ty().clone();
     let maybe_sigs = Value::array([sig1, sig2, sig3], ty);
     witness_values.insert(WitnessName::from_str_unchecked("MAYBE_SIGS"), maybe_sigs);
-    simfony::WitnessValues::from(witness_values)
+    simplicityhl::WitnessValues::from(witness_values)
 }

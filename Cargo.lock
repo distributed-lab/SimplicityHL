@@ -219,7 +219,7 @@ checksum = "f46ad14479a25103f283c0f10005961cf086d8dc42205bb44c46ac563475dca6"
 name = "codegen"
 version = "0.1.0"
 dependencies = [
- "simfony",
+ "simplicityhl",
 ]
 
 [[package]]
@@ -621,24 +621,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "simfony"
-version = "0.1.0"
-dependencies = [
- "arbitrary",
- "base64",
- "clap",
- "either",
- "getrandom",
- "itertools",
- "miniscript",
- "pest",
- "pest_derive",
- "serde",
- "serde_json",
- "simplicity-lang",
-]
-
-[[package]]
 name = "simplicity-lang"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -663,6 +645,24 @@ checksum = "e9c453a3edfff1ca89b03616a0028f5dc0da0ac5099665ee63357561edf1db71"
 dependencies = [
  "bitcoin_hashes",
  "cc",
+]
+
+[[package]]
+name = "simplicityhl"
+version = "0.1.0"
+dependencies = [
+ "arbitrary",
+ "base64",
+ "clap",
+ "either",
+ "getrandom",
+ "itertools",
+ "miniscript",
+ "pest",
+ "pest_derive",
+ "serde",
+ "serde_json",
+ "simplicity-lang",
 ]
 
 [[package]]

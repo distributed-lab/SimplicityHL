@@ -5,18 +5,18 @@ use elements::pset::PartiallySignedTransaction as Psbt;
 use elements::{confidential, secp256k1_zkp as secp256k1};
 use elementsd::ElementsD;
 use secp256k1::XOnlyPublicKey;
-use simfony::{elements, simplicity};
 use simplicity::jet::elements::{ElementsEnv, ElementsUtxo};
+use simplicityhl::{elements, simplicity};
 
 use crate::common::daemon::Call;
 
-type FnWitness = fn([u8; 32]) -> simfony::WitnessValues;
+type FnWitness = fn([u8; 32]) -> simplicityhl::WitnessValues;
 
 #[derive(Clone)]
 pub struct TestCase<'a> {
     pub name: &'static str,
-    template: Option<simfony::TemplateProgram>,
-    compiled: Option<simfony::CompiledProgram>,
+    template: Option<simplicityhl::TemplateProgram>,
+    compiled: Option<simplicityhl::CompiledProgram>,
     witness: FnWitness,
     lock_time: elements::LockTime,
     sequence: elements::Sequence,
@@ -53,7 +53,7 @@ impl<'a> TestCase<'a> {
 
     pub fn program_path<P: AsRef<std::path::Path>>(mut self, path: P) -> Self {
         let text = std::fs::read_to_string(path).expect("path should be readable");
-        let compiled = simfony::CompiledProgram::new(text.as_str(), simfony::Arguments::default(), false)
+        let compiled = simplicityhl::CompiledProgram::new(text.as_str(), simplicityhl::Arguments::default(), false)
             .expect("program should compile");
         self.compiled = Some(compiled);
         self
@@ -62,12 +62,12 @@ impl<'a> TestCase<'a> {
     pub fn template_path<P: AsRef<std::path::Path>>(mut self, path: P) -> Self {
         let text = std::fs::read_to_string(path).expect("path should be readable");
         let template =
-            simfony::TemplateProgram::new(text.as_str()).expect("program should compile");
+            simplicityhl::TemplateProgram::new(text.as_str()).expect("program should compile");
         self.template = Some(template);
         self
     }
 
-    pub fn arguments(mut self, arguments: simfony::Arguments) -> Self {
+    pub fn arguments(mut self, arguments: simplicityhl::Arguments) -> Self {
         let compiled = self
             .template
             .as_ref()
@@ -220,6 +220,6 @@ impl<'a> TestCase<'a> {
     }
 }
 
-fn empty_witness(_sighash_all: [u8; 32]) -> simfony::WitnessValues {
-    simfony::WitnessValues::default()
+fn empty_witness(_sighash_all: [u8; 32]) -> simplicityhl::WitnessValues {
+    simplicityhl::WitnessValues::default()
 }
