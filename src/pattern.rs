@@ -307,7 +307,7 @@ impl BasePattern {
     /// We enforce a unique translation by banning ignore from the `to` pattern.
     pub fn translate<'brand, P: CoreExt<'brand>>(
         &self,
-        ctx: &simplicity::types::Context,
+        ctx: &simplicity::types::Context<'brand>,
         to: &Self,
     ) -> Option<PairBuilder<P>> {
         #[derive(Debug, Clone)]
@@ -466,11 +466,12 @@ mod tests {
         ];
 
         for (target, expected_expr) in target_expr {
-            let ctx = simplicity::types::Context::new();
-            let expr = env
-                .translate::<Arc<named::ConstructNode<Elements>>>(&ctx, &target)
-                .unwrap();
-            assert_eq!(expected_expr, expr.as_ref().display_expr().to_string());
+            simplicity::types::Context::with_context(|ctx| {
+                let expr = env
+                    .translate::<Arc<named::ConstructNode<Elements>>>(&ctx, &target)
+                    .unwrap();
+                assert_eq!(expected_expr, expr.as_ref().display_expr().to_string());
+            });
         }
     }
 }
