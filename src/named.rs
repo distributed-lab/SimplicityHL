@@ -260,7 +260,7 @@ impl<J: Jet> WitnessConstructible<WitnessName> for node::ConstructData<J> {
 }
 
 /// More constructors for types that implement [`CoreConstructible`].
-pub trait CoreExt: CoreConstructible + Sized {
+pub trait CoreExt<'brand>: CoreConstructible + Sized {
     fn h(inference_context: &types::Context) -> PairBuilder<Self> {
         PairBuilder::iden(inference_context)
     }
@@ -339,7 +339,7 @@ pub trait CoreExt: CoreConstructible + Sized {
     }
 }
 
-impl<N: CoreConstructible> CoreExt for N {}
+impl<'brand, N: CoreConstructible> CoreExt<'brand> for N {}
 
 /// Builder of expressions that contain
 /// `take`, `drop` and `iden` only.
@@ -360,7 +360,7 @@ impl<P> Default for SelectorBuilder<P> {
     }
 }
 
-impl<P: CoreExt> SelectorBuilder<P> {
+impl<'brand, P: CoreExt<'brand>> SelectorBuilder<P> {
     /// Select the first component '0' of the input pair.
     pub fn o(mut self) -> Self {
         self.selection.push(false);
@@ -406,7 +406,7 @@ impl<P: CoreExt> SelectorBuilder<P> {
 #[derive(Debug, Clone, Hash)]
 pub struct PairBuilder<P>(P);
 
-impl<P: CoreExt> PairBuilder<P> {
+impl<'brand, P: CoreExt<'brand>> PairBuilder<P> {
     /// Create the unit expression.
     ///
     /// ## Invariant

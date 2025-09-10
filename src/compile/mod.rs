@@ -39,7 +39,7 @@ type ProgNode = Arc<named::ConstructNode<Elements>>;
 /// Bindings from inner scopes overwrite bindings from outer scopes.
 /// Bindings live as long as their scope.
 #[derive(Debug, Clone)]
-struct Scope {
+struct Scope<'brand> {
     /// For each scope, the set of assigned variables.
     ///
     /// A stack of scopes. Each scope is a stack of patterns.
@@ -72,9 +72,12 @@ struct Scope {
     /// Values for parameters inside the SimplicityHL program.
     arguments: Arguments,
     include_debug_symbols: bool,
+    // In the next commits, this will be dropped since the 'brand
+    // tag will be moved into 'ctx'.
+    phantom: std::marker::PhantomData<fn(&'brand ()) -> &'brand ()>,
 }
 
-impl Scope {
+impl<'brand> Scope<'brand> {
     /// Create the main scope.
     ///
     /// _This function should be called at the start of the compilation and then never again._
@@ -94,6 +97,7 @@ impl Scope {
             call_tracker,
             arguments,
             include_debug_symbols,
+            phantom: core::marker::PhantomData,
         }
     }
 
@@ -105,6 +109,7 @@ impl Scope {
             call_tracker: Arc::clone(&self.call_tracker),
             arguments: self.arguments.clone(),
             include_debug_symbols: self.include_debug_symbols,
+            phantom: core::marker::PhantomData,
         }
     }
 
@@ -221,9 +226,9 @@ impl Scope {
     }
 }
 
-fn compile_blk(
+fn compile_blk<'brand>(
     stmts: &[Statement],
-    scope: &mut Scope,
+    scope: &mut Scope<'brand>,
     index: usize,
     last_expr: Option<&Expression>,
 ) -> Result<PairBuilder<ProgNode>, RichError> {
@@ -278,7 +283,10 @@ impl Program {
 }
 
 impl Expression {
-    fn compile(&self, scope: &mut Scope) -> Result<PairBuilder<ProgNode>, RichError> {
+    fn compile<'brand>(
+        &self,
+        scope: &mut Scope<'brand>,
+    ) -> Result<PairBuilder<ProgNode>, RichError> {
         match self.inner() {
             ExpressionInner::Block(stmts, expr) => {
                 scope.push_scope();
@@ -292,7 +300,10 @@ impl Expression {
 }
 
 impl SingleExpression {
-    fn compile(&self, scope: &mut Scope) -> Result<PairBuilder<ProgNode>, RichError> {
+    fn compile<'brand>(
+        &self,
+        scope: &mut Scope<'brand>,
+    ) -> Result<PairBuilder<ProgNode>, RichError> {
         let expr = match self.inner() {
             SingleExpressionInner::Constant(value) => {
                 let value = StructuralValue::from(value);
@@ -360,7 +371,10 @@ impl SingleExpression {
 }
 
 impl Call {
-    fn compile(&self, scope: &mut Scope) -> Result<PairBuilder<ProgNode>, RichError> {
+    fn compile<'brand>(
+        &self,
+        scope: &mut Scope<'brand>,
+    ) -> Result<PairBuilder<ProgNode>, RichError> {
         let args_ast = SingleExpression::tuple(self.args().clone(), *self.as_ref());
         let args = args_ast.compile(scope)?;
 
@@ -626,7 +640,10 @@ fn for_while(
 }
 
 impl Match {
-    fn compile(&self, scope: &mut Scope) -> Result<PairBuilder<ProgNode>, RichError> {
+    fn compile<'brand>(
+        &self,
+        scope: &mut Scope<'brand>,
+    ) -> Result<PairBuilder<ProgNode>, RichError> {
         scope.push_scope();
         scope.insert(
             self.left()
