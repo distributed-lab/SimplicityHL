@@ -125,6 +125,11 @@ impl Assignment {
     pub fn expression(&self) -> &Expression {
         &self.expression
     }
+
+    /// Access the span of the assignment.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl_eq_hash!(Assignment; pattern, expression);
@@ -148,6 +153,11 @@ impl Expression {
     /// Access the type of the expression.
     pub fn ty(&self) -> &ResolvedType {
         &self.ty
+    }
+
+    /// Access the span of the expression.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 
@@ -191,6 +201,11 @@ impl SingleExpression {
     /// Access the type of the expression.
     pub fn ty(&self) -> &ResolvedType {
         &self.ty
+    }
+
+    /// Access the span of the expression.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 
@@ -242,6 +257,11 @@ impl Call {
     /// Access the arguments of the call.
     pub fn args(&self) -> &Arc<[Expression]> {
         &self.args
+    }
+
+    /// Access the span of the call.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 
