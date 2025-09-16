@@ -372,6 +372,11 @@ impl Match {
     pub fn right(&self) -> &MatchArm {
         &self.right
     }
+
+    /// Access the span of the match statement.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl_eq_hash!(Match; scrutinee, left, right);
@@ -414,6 +419,11 @@ impl Module {
     pub fn assignments(&self) -> &[ModuleAssignment] {
         &self.assignments
     }
+
+    /// Access the span of the module.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -432,6 +442,11 @@ impl ModuleAssignment {
     /// Access the assigned witness value.
     pub fn value(&self) -> &Value {
         &self.value
+    }
+
+    /// Access the span of the module.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 

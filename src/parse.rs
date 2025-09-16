@@ -85,6 +85,11 @@ impl Function {
     pub fn body(&self) -> &Expression {
         &self.body
     }
+
+    /// Access the span of the function.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl_eq_hash!(Function; name, params, ret, body);
@@ -295,6 +300,11 @@ impl SingleExpression {
     pub fn inner(&self) -> &SingleExpressionInner {
         &self.inner
     }
+
+    /// Access the span of the expression.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl_eq_hash!(SingleExpression; inner);
@@ -359,6 +369,11 @@ impl Match {
     /// Access the match arm for right sum values.
     pub fn right(&self) -> &MatchArm {
         &self.right
+    }
+
+    /// Access the span of the match statement.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 
     /// Get the type of the expression that is matched.
