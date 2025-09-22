@@ -294,6 +294,7 @@ impl From<pest::error::Error<Rule>> for RichError {
 /// Records _what_ happened but not where.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Error {
+    ArraySizeNonZero(usize),
     ListBoundPow2(usize),
     BitStringPow2(usize),
     HexStringLen(usize),
@@ -336,6 +337,10 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Error::ArraySizeNonZero(size) => write!(
+                f,
+                "Expected a non-negative integer as array size, found {size}"
+            ),
             Error::ListBoundPow2(bound) => write!(
                 f,
                 "Expected a power of two greater than one (2, 4, 8, 16, 32, ...) as list bound, found {bound}"

@@ -4,6 +4,7 @@ pub type ProgNode = Arc<named::ConstructNode>;
 
 pub mod array;
 pub mod ast;
+pub mod builtins;
 pub mod compile;
 pub mod debug;
 pub mod dummy_env;
@@ -274,7 +275,7 @@ pub trait ArbitraryOfType: Sized {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use base64::display::Base64Display;
     use base64::engine::general_purpose::STANDARD;
     use simplicity::BitMachine;
@@ -283,7 +284,7 @@ mod tests {
 
     use crate::*;
 
-    struct TestCase<T> {
+    pub(crate) struct TestCase<T> {
         program: T,
         lock_time: elements::LockTime,
         sequence: elements::Sequence,

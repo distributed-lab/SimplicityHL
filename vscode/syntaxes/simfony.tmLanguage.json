@@ -199,7 +199,7 @@
             "patterns": [
                 {
                     "name": "entity.name.function.simfony",
-                    "match": "\\b(unwrap_left|unwrap_right|for_while|is_none|unwrap|into|fold|dbg)\\b"
+                    "match": "\\b(unwrap_left|unwrap_right|for_while|is_none|array_fold|unwrap|into|fold|dbg)\\b"
                 },
                 {
                     "match": "\\b(fn)\\s+([a-zA-Z][a-zA-Z0-9_]*)\\s*\\(",

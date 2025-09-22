@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -275,6 +276,8 @@ pub enum CallName {
     Custom(CustomFunction),
     /// Fold of a bounded list with the given function.
     Fold(CustomFunction, NonZeroPow2Usize),
+    /// Fold of an array with the given function.
+    ArrayFold(CustomFunction, NonZeroUsize),
     /// Loop over the given function a bounded number of times until it returns success.
     ForWhile(CustomFunction, Pow2Usize),
 }
@@ -1187,6 +1190,26 @@ impl AbstractSyntaxTree for Call {
                 check_output_type(out_ty, ty).with_span(from)?;
                 analyze_arguments(from.args(), &args_ty, scope)?
             }
+            CallName::ArrayFold(function, size) => {
+                // An array fold has the signature:
+                //   array_fold::<f, N>(array: [E; N], initial_accumulator: A) -> A
+                // where
+                //   fn f(element: E, accumulator: A) -> A
+                let element_ty = function.params().first().expect("foldable function").ty();
+                let array_ty = ResolvedType::array(element_ty.clone(), size.get());
+                let accumulator_ty = function
+                    .params()
+                    .get(1)
+                    .expect("foldable function")
+                    .ty()
+                    .clone();
+                let args_ty = [array_ty, accumulator_ty];
+
+                check_argument_types(from.args(), &args_ty).with_span(from)?;
+                let out_ty = function.body().ty();
+                check_output_type(out_ty, ty).with_span(from)?;
+                analyze_arguments(from.args(), &args_ty, scope)?
+            }
             CallName::ForWhile(function, _bit_width) => {
                 // A for-while loop has the signature:
                 //   for_while::<f>(initial_accumulator: A, readonly_context: C) -> Either<B, A>
@@ -1262,6 +1285,21 @@ impl AbstractSyntaxTree for CallName {
                 .map(Self::Custom)
                 .ok_or(Error::FunctionUndefined(name.clone()))
                 .with_span(from),
+            parse::CallName::ArrayFold(name, size) => {
+                let function = scope
+                    .get_function(name)
+                    .cloned()
+                    .ok_or(Error::FunctionUndefined(name.clone()))
+                    .with_span(from)?;
+                // A function that is used in a array fold has the signature:
+                //   fn f(element: E, accumulator: A) -> A
+                if function.params().len() != 2 || function.params()[1].ty() != function.body().ty()
+                {
+                    Err(Error::FunctionNotFoldable(name.clone())).with_span(from)
+                } else {
+                    Ok(Self::ArrayFold(function, *size))
+                }
+            }
             parse::CallName::Fold(name, bound) => {
                 let function = scope
                     .get_function(name)
