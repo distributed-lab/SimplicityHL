@@ -5,9 +5,12 @@ node_modules/
 npm-debug.log
 *.ts
 *.map
+tsconfig.json
+.github
 test/
 tests/
 README.md
+esbuild.js
 bitcoind-tests/
 flake.*
 Cargo.*

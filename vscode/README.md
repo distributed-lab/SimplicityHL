@@ -10,6 +10,8 @@ SimplicityHL is a high-level language for writing Simplicity smart contracts. Si
 
 - Syntax highlighting for .simf and .wit files
 - Basic language configuration (brackets, comments)
+- Error diagnostics
+- Completion of build-in functions -- jets
 
 ### Development
 
