@@ -3,7 +3,7 @@ node_modules/
 .git/
 .gitignore
 npm-debug.log
-*.ts
+**/*.ts
 *.map
 tsconfig.json
 .github
