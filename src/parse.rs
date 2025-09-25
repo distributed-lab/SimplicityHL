@@ -2,6 +2,7 @@
 //! tokens into an AST.
 
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -194,6 +195,8 @@ pub enum CallName {
     Custom(FunctionName),
     /// Fold of a bounded list with the given function.
     Fold(FunctionName, NonZeroPow2Usize),
+    /// Fold of an array with the given function.
+    ArrayFold(FunctionName, NonZeroUsize),
     /// Loop over the given function a bounded number of times until it returns success.
     ForWhile(FunctionName),
 }
@@ -757,6 +760,7 @@ impl fmt::Display for CallName {
             CallName::TypeCast(ty) => write!(f, "<{ty}>::into"),
             CallName::Custom(name) => write!(f, "{name}"),
             CallName::Fold(name, bound) => write!(f, "fold::<{name}, {bound}>"),
+            CallName::ArrayFold(name, size) => write!(f, "array_fold::<{name}, {size}>"),
             CallName::ForWhile(name) => write!(f, "for_while::<{name}>"),
         }
     }
@@ -1036,6 +1040,19 @@ impl PestParse for CallName {
                 let name = FunctionName::parse(it.next().unwrap())?;
                 let bound = NonZeroPow2Usize::parse(it.next().unwrap())?;
                 Ok(Self::Fold(name, bound))
+            }
+            Rule::array_fold => {
+                let mut it = pair.into_inner();
+                let name = FunctionName::parse(it.next().unwrap())?;
+                let non_zero_usize_parse =
+                    |pair: pest::iterators::Pair<Rule>| -> Result<NonZeroUsize, RichError> {
+                        let size = pair.as_str().parse::<usize>().with_span(&pair)?;
+                        NonZeroUsize::new(size)
+                            .ok_or(Error::ArraySizeNonZero(size))
+                            .with_span(&pair)
+                    };
+                let size = non_zero_usize_parse(it.next().unwrap())?;
+                Ok(Self::ArrayFold(name, size))
             }
             Rule::for_while => {
                 let mut it = pair.into_inner();

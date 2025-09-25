@@ -12,3 +12,4 @@
 - [Match Expression](./match_expression.md)
 - [Functions](./function.md)
 - [Programs](./program.md)
+- [Builtins](./builtins.md)

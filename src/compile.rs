@@ -12,6 +12,7 @@ use crate::ast::{
     Call, CallName, Expression, ExpressionInner, Match, Program, SingleExpression,
     SingleExpressionInner, Statement,
 };
+use crate::builtins::array_fold;
 use crate::debug::CallTracker;
 use crate::error::{Error, RichError, Span, WithSpan};
 use crate::named::{CoreExt, PairBuilder};
@@ -416,6 +417,12 @@ impl Call {
                 let mut function_scope = scope.child(function.params_pattern());
                 let body = function.body().compile(&mut function_scope)?;
                 let fold_body = list_fold(*bound, body.as_ref()).with_span(self)?;
+                args.comp(&fold_body).with_span(self)
+            }
+            CallName::ArrayFold(function, size) => {
+                let mut function_scope = scope.child(function.params_pattern());
+                let body = function.body().compile(&mut function_scope)?;
+                let fold_body = array_fold(*size, body.as_ref()).with_span(self)?;
                 args.comp(&fold_body).with_span(self)
             }
             CallName::ForWhile(function, bit_width) => {
