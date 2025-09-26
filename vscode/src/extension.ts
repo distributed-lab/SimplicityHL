@@ -6,20 +6,15 @@ import {
   ServerOptions,
 } from "vscode-languageclient/node";
 import * as cp from "child_process";
+import { ensureExecutable } from "./find_server";
 let client: LanguageClient;
-export function activate(context: ExtensionContext) {
+export async function activate(context: ExtensionContext) {
   const command = "simplicityhl-lsp";
-  try {
-    cp.execSync(
-      process.platform === "win32" ? `where ${command}` : `which ${command}`,
-    );
-  } catch {
-    window.showErrorMessage(
-      `LSP server "${command}" was not found in your PATH. Please install it or add it to PATH.`,
-    );
+  const exec = await ensureExecutable(command);
+  if (!exec) {
     return;
   }
-  window.showInformationMessage("SimplicityHL LSP activated!");
+  window.showInformationMessage("SimplicityHL Language Server activated!");
   const run: Executable = {
     command,
     options: {
@@ -41,7 +36,7 @@ export function activate(context: ExtensionContext) {
   };
   // Create the language client and start the client.
   client = new LanguageClient(
-    "simplicityhl-lsp",
+    exec,
     "SimplicityHL LSP",
     serverOptions,
     clientOptions,

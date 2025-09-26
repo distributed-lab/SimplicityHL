@@ -59,7 +59,17 @@
         "scopeName": "source.wit",
         "path": "./syntaxes/witness.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "SimplicityHL",
+      "properties": {
+        "simplicityhl.suppressMissingLspWarning": {
+          "type": "boolean",
+          "default": false,
+          "description": "Do not show missing LSP executable warning."
+        }
+      }
+    }
   },
   "license": "MIT",
   "scripts": {
