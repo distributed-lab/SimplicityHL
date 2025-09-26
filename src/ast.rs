@@ -126,6 +126,11 @@ impl Assignment {
     pub fn expression(&self) -> &Expression {
         &self.expression
     }
+
+    /// Access the span of the assignment.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl_eq_hash!(Assignment; pattern, expression);
@@ -149,6 +154,11 @@ impl Expression {
     /// Access the type of the expression.
     pub fn ty(&self) -> &ResolvedType {
         &self.ty
+    }
+
+    /// Access the span of the expression.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 
@@ -192,6 +202,11 @@ impl SingleExpression {
     /// Access the type of the expression.
     pub fn ty(&self) -> &ResolvedType {
         &self.ty
+    }
+
+    /// Access the span of the expression.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 
@@ -243,6 +258,11 @@ impl Call {
     /// Access the arguments of the call.
     pub fn args(&self) -> &Arc<[Expression]> {
         &self.args
+    }
+
+    /// Access the span of the call.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 
@@ -355,6 +375,11 @@ impl Match {
     pub fn right(&self) -> &MatchArm {
         &self.right
     }
+
+    /// Access the span of the match statement.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl_eq_hash!(Match; scrutinee, left, right);
@@ -397,6 +422,11 @@ impl Module {
     pub fn assignments(&self) -> &[ModuleAssignment] {
         &self.assignments
     }
+
+    /// Access the span of the module.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -415,6 +445,11 @@ impl ModuleAssignment {
     /// Access the assigned witness value.
     pub fn value(&self) -> &Value {
         &self.value
+    }
+
+    /// Access the span of the module.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 

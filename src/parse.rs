@@ -86,6 +86,11 @@ impl Function {
     pub fn body(&self) -> &Expression {
         &self.body
     }
+
+    /// Access the span of the function.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl_eq_hash!(Function; name, params, ret, body);
@@ -143,6 +148,11 @@ impl Assignment {
     pub fn expression(&self) -> &Expression {
         &self.expression
     }
+
+    /// Access the span of the expression.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl_eq_hash!(Assignment; pattern, ty, expression);
@@ -164,6 +174,11 @@ impl Call {
     /// Access the arguments to the call.
     pub fn args(&self) -> &[Expression] {
         self.args.as_ref()
+    }
+
+    /// Access the span of the call.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 
@@ -223,6 +238,11 @@ impl TypeAlias {
     pub fn ty(&self) -> &AliasedType {
         &self.ty
     }
+
+    /// Access the span of the alias.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl_eq_hash!(TypeAlias; name, ty);
@@ -238,6 +258,11 @@ impl Expression {
     /// Access the inner expression.
     pub fn inner(&self) -> &ExpressionInner {
         &self.inner
+    }
+
+    /// Access the span of the expression.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 
     /// Convert the expression into a block expression.
@@ -277,6 +302,11 @@ impl SingleExpression {
     /// Access the inner expression.
     pub fn inner(&self) -> &SingleExpressionInner {
         &self.inner
+    }
+
+    /// Access the span of the expression.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 
@@ -342,6 +372,11 @@ impl Match {
     /// Access the match arm for right sum values.
     pub fn right(&self) -> &MatchArm {
         &self.right
+    }
+
+    /// Access the span of the match statement.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 
     /// Get the type of the expression that is matched.
@@ -430,6 +465,11 @@ impl ModuleProgram {
     pub fn items(&self) -> &[ModuleItem] {
         &self.items
     }
+
+    /// Access the span of the program.
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl_eq_hash!(ModuleProgram; items);
@@ -457,6 +497,11 @@ impl Module {
     /// Access the assignments of the module.
     pub fn assignments(&self) -> &[ModuleAssignment] {
         &self.assignments
+    }
+
+    /// Access the span of the module.
+    pub fn span(&self) -> &Span {
+        &self.span
     }
 }
 

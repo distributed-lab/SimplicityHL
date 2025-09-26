@@ -221,6 +221,14 @@ impl RichError {
             file: Some(file),
         }
     }
+
+    pub fn error(&self) -> &Error {
+        &self.error
+    }
+
+    pub fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 impl fmt::Display for RichError {
