@@ -14,10 +14,14 @@
   "categories": [
     "Programming Languages"
   ],
+  "activationEvents": [
+    "onLanguage:simplicityhl"
+  ],
+  "main": "dist/extension.js",
   "contributes": {
     "languages": [
       {
-        "id": "simfony",
+        "id": "simplicityhl",
         "aliases": [
           "Simfony",
           "simfony",
@@ -30,7 +34,7 @@
         "configuration": "./language-configuration.json"
       },
       {
-        "id": "simfony-witness",
+        "id": "simplicityhl-witness",
         "aliases": [
           "Simfony witness",
           "simfony witness",
@@ -46,25 +50,57 @@
     ],
     "grammars": [
       {
-        "language": "simfony",
+        "language": "simplicityhl",
         "scopeName": "source.simfony",
         "path": "./syntaxes/simfony.tmLanguage.json"
       },
       {
-        "language": "wit",
+        "language": "simplicityhl-witness",
         "scopeName": "source.wit",
         "path": "./syntaxes/witness.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "SimplicityHL",
+      "properties": {
+        "simplicityhl.suppressMissingLspWarning": {
+          "type": "boolean",
+          "default": false,
+          "description": "Do not show missing LSP executable warning."
+        }
+      }
+    }
   },
   "license": "MIT",
   "scripts": {
+    "compile": "npm run check-types && node esbuild.js --production",
+    "check-types": "tsc --noEmit",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "vscode:prepublish": "npm run compile",
     "login": "vsce login Simplicity",
     "package": "vsce package",
     "publish": "vsce publish"
   },
   "icon": "icon.png",
+  "devDependencies": {
+    "@eslint/js": "^9.13.0",
+    "@stylistic/eslint-plugin": "^2.9.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^22",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "^0.25.9",
+    "eslint": "^9.13.0",
+    "mocha": "^10.3.0",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.39.0"
+  },
   "dependencies": {
+    "@types/vscode": "^1.66.0",
+    "@vscode/test-electron": "^2.3.9",
+    "vscode-languageclient": "^9.0.1",
     "@vscode/vsce": "^3.6.0"
   }
 }
