@@ -10,7 +10,6 @@
 		"sourceMap": true
 	},
 	"include": [
-    "./eslint.config.ts",
 		"src"
 	],
 	"exclude": [
