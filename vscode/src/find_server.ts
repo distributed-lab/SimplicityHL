@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { env, Uri, window, workspace } from "vscode";
+import process from "node:process";
 
 function findExecutable(command: string): string | null {
   try {
@@ -60,6 +61,7 @@ export async function ensureExecutable(
     "suppressMissingLspWarning",
     false,
   );
+
   if (!exePath && !suppressWarning) {
     const choice = await window.showWarningMessage(
       `LSP server "${command}" was not found in PATH or common locations. To use language server feautures, please install server to PATH`,

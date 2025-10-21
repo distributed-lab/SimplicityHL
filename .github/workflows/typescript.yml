@@ -1,0 +1,36 @@
+name: Continious integration for VSCode extension
+on:
+  push:
+    branches:
+      - master
+jobs:
+  eslint:
+    name: 'Node.js v${{ matrix.node }}'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node:
+          - 22
+
+    steps:
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '${{ matrix.node }}'
+
+      - uses: actions/checkout@v4
+
+      - name: 'Cache node_modules'
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-v${{ matrix.node }}-${{ hashFiles('**/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-v${{ matrix.node }}-
+
+      - name: 'Install Dependencies'
+        run: npm ci
+        working-directory: ./vscode
+
+      - name: 'Run ESLint'
+        run: npm run eslint-check
+        working-directory: ./vscode
