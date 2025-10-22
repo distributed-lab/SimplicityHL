@@ -1,36 +1,57 @@
-name: Continious integration for VSCode extension
+name: VS Code extension (ESLint)
+
 on:
   push:
     branches:
       - master
+    paths:
+      - 'vscode/**'
+      - '.github/workflows/typescript.yml'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'vscode/**'
+      - '.github/workflows/typescript.yml'
+  workflow_dispatch:
+
 jobs:
   eslint:
-    name: 'Node.js v${{ matrix.node }}'
+    name: Lint on Node v${{ matrix.node }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+
     strategy:
+      fail-fast: false
       matrix:
         node:
           - 22
-
+    
+    defaults:
+      run:
+        working-directory: ./vscode
+    
     steps:
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '${{ matrix.node }}'
-
       - uses: actions/checkout@v4
-
-      - name: 'Cache node_modules'
-        uses: actions/cache@v4
+      
+      - uses: actions/setup-node@v4
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-v${{ matrix.node }}-${{ hashFiles('**/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-v${{ matrix.node }}-
-
-      - name: 'Install Dependencies'
+          node-version: ${{ matrix.node }}
+          cache: 'npm'
+          cache-dependency-path: vscode/package-lock.json
+      
+      - name: Install dependencies
         run: npm ci
-        working-directory: ./vscode
-
-      - name: 'Run ESLint'
+        env:
+          CI: true
+      
+      - name: Run ESLint
         run: npm run eslint-check
-        working-directory: ./vscode
+        env:
+          CI: true
