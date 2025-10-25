@@ -108,7 +108,7 @@ impl<'a> TestCase<'a> {
 
     fn taproot_spend_info(&self) -> elements::taproot::TaprootSpendInfo {
         let internal_key = XOnlyPublicKey::from_str(
-            "f5919fa64ce45f8306849072b26c1bfdd2937e6b81774796ff372bd1eb5362d2",
+            "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0",
         )
         .unwrap();
         let builder = elements::taproot::TaprootBuilder::new();
