@@ -1,5 +1,7 @@
 //! Compile the parsed ast into a simplicity program
 
+mod builtins;
+
 use std::sync::Arc;
 
 use either::Either;
@@ -7,12 +9,12 @@ use simplicity::jet::Elements;
 use simplicity::node::{CoreConstructible as _, JetConstructible as _};
 use simplicity::{Cmr, FailEntropy};
 
+use self::builtins::array_fold;
 use crate::array::{BTreeSlice, Partition};
 use crate::ast::{
     Call, CallName, Expression, ExpressionInner, Match, Program, SingleExpression,
     SingleExpressionInner, Statement,
 };
-use crate::builtins::array_fold;
 use crate::debug::CallTracker;
 use crate::error::{Error, RichError, Span, WithSpan};
 use crate::named::{self, CoreExt, PairBuilder};
