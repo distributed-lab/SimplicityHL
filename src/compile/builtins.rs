@@ -2,7 +2,8 @@ use std::num::NonZeroUsize;
 
 use simplicity::node::CoreConstructible;
 
-use crate::{named::CoreExt, ProgNode};
+use super::ProgNode;
+use crate::named::CoreExt;
 
 /// Fold an array of size `size` elements using function `f`.
 ///
