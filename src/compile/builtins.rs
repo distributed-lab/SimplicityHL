@@ -20,8 +20,8 @@ pub fn array_fold(size: NonZeroUsize, f: &ProgNode) -> Result<ProgNode, simplici
         n: usize,
         f_powers_of_two: &Vec<ProgNode>,
     ) -> Result<ProgNode, simplicity::types::Error> {
-        if n == 1 {
-            return Ok(f_powers_of_two[0].clone());
+        if n.is_power_of_two() {
+            return Ok(f_powers_of_two[n.ilog2() as usize].clone());
         }
         // For n > 1 the next largest power is always >= 0
         let max_pow2 = n.ilog2() as usize;
