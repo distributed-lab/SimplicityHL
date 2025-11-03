@@ -1,4 +1,5 @@
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 use simplicity::node::CoreConstructible;
 
@@ -18,16 +19,20 @@ pub fn array_fold(size: NonZeroUsize, f: &ProgNode) -> Result<ProgNode, simplici
     /// Recursively fold the array using the precomputed folding functions.
     fn tree_fold(
         n: usize,
-        f_powers_of_two: &Vec<ProgNode>,
+        f_powers_of_two: &[ProgNode],
     ) -> Result<ProgNode, simplicity::types::Error> {
-        if n.is_power_of_two() {
-            return Ok(f_powers_of_two[n.ilog2() as usize].clone());
-        }
-        // For n > 1 the next largest power is always >= 0
-        let max_pow2 = n.ilog2() as usize;
-        let size_right = 1 << max_pow2;
         // Array is a left-balanced (right-associative) binary tree.
-        let f_right = f_powers_of_two.get(max_pow2).expect("max_pow2 OOB");
+        let max_pow2 = n.ilog2() as usize;
+        debug_assert!(max_pow2 < f_powers_of_two.len());
+        let f_right = &f_powers_of_two[max_pow2];
+
+        // If the tree is balanced, return precomputed solution.
+        let size_right = 1 << max_pow2;
+        if n == size_right {
+            return Ok(Arc::clone(f_right));
+        }
+        debug_assert!(size_right < n);
+
         let f_left = tree_fold(n - size_right, f_powers_of_two)?;
         f_array_fold(&f_left, f_right)
     }
@@ -51,7 +56,7 @@ pub fn array_fold(size: NonZeroUsize, f: &ProgNode) -> Result<ProgNode, simplici
 
     // Precompute the folding functions for arrays of size 2^i where i < n.
     let n = size.get();
-    let mut f_powers_of_two: Vec<ProgNode> = Vec::with_capacity(n.ilog2() as usize);
+    let mut f_powers_of_two: Vec<ProgNode> = Vec::with_capacity(1 + n.ilog2() as usize);
 
     // An array of size 1 is just the element itself, so f_array_fold_1 is the same as the folding function.
     let mut f_prev = f.clone();
@@ -60,7 +65,7 @@ pub fn array_fold(size: NonZeroUsize, f: &ProgNode) -> Result<ProgNode, simplici
     let mut i = 1;
     while i < n {
         f_prev = f_array_fold(&f_prev, &f_prev)?;
-        f_powers_of_two.push(f_prev.clone());
+        f_powers_of_two.push(Arc::clone(&f_prev));
         i *= 2;
     }
 
