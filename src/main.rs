@@ -33,7 +33,6 @@ fn run() -> Result<(), String> {
             )
     };
 
-    #[cfg(feature = "serde")]
     let command = {
         command.arg(
             Arg::new("wit_file")
@@ -75,7 +74,15 @@ fn run() -> Result<(), String> {
             .transpose()?
     };
     #[cfg(not(feature = "serde"))]
-    let witness_opt: Option<simplicityhl::WitnessValues> = None;
+    let witness_opt: Option<simplicityhl::WitnessValues> = {
+        if matches.contains_id("wit_file") {
+            return Err(
+                "Program was compiled without the 'serde' feature and cannot process .wit files."
+                    .into(),
+            );
+        }
+        None
+    };
 
     if let Some(witness) = witness_opt {
         let satisfied = compiled.satisfy(witness)?;
