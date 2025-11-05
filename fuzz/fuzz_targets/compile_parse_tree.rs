@@ -24,6 +24,5 @@ fuzz_target!(|data: &[u8]| {
         .compile(arguments, false)
         .with_file("")
         .expect("AST should compile with given arguments");
-    let _simplicity_commit = named::to_commit_node(&simplicity_named_construct)
-        .expect("Conversion to commit node should never fail");
+    let _simplicity_commit = named::forget_names(&simplicity_named_construct);
 });
