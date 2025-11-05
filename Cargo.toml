@@ -38,8 +38,8 @@ clap = "4.5.37"
 getrandom = { version = "0.2", features = ["js"] }
 
 [workspace]
-members = ["codegen"]
-exclude = ["fuzz", "bitcoind-tests"]
+members = ["codegen", "fuzz"]
+exclude = ["bitcoind-tests"]
 
 [lints.clippy]
 # Exclude lints we don't think are valuable.
