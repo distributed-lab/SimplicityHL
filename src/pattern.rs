@@ -202,7 +202,10 @@ impl BasePattern {
     /// The expression takes as input a value that matches the `self` pattern.
     ///
     /// The expression is a sequence of `take` and `drop` followed by `iden`.
-    fn get<P: CoreExt>(&self, identifier: &Identifier) -> Option<SelectorBuilder<P>> {
+    fn get<'brand, P: CoreExt<'brand>>(
+        &self,
+        identifier: &Identifier,
+    ) -> Option<SelectorBuilder<P>> {
         let mut selector = SelectorBuilder::default();
 
         for data in self.verbose_pre_order_iter() {
@@ -302,9 +305,9 @@ impl BasePattern {
     /// This means there are infinitely many translating expressions from `self` to `to`.
     /// For instance, `iden`, `iden & iden`, `(iden & iden) & iden`, and so on.
     /// We enforce a unique translation by banning ignore from the `to` pattern.
-    pub fn translate<P: CoreExt>(
+    pub fn translate<'brand, P: CoreExt<'brand>>(
         &self,
-        ctx: &simplicity::types::Context,
+        ctx: &simplicity::types::Context<'brand>,
         to: &Self,
     ) -> Option<PairBuilder<P>> {
         #[derive(Debug, Clone)]
@@ -463,11 +466,12 @@ mod tests {
         ];
 
         for (target, expected_expr) in target_expr {
-            let ctx = simplicity::types::Context::new();
-            let expr = env
-                .translate::<Arc<named::ConstructNode<Elements>>>(&ctx, &target)
-                .unwrap();
-            assert_eq!(expected_expr, expr.as_ref().display_expr().to_string());
+            simplicity::types::Context::with_context(|ctx| {
+                let expr = env
+                    .translate::<Arc<named::ConstructNode<Elements>>>(&ctx, &target)
+                    .unwrap();
+                assert_eq!(expected_expr, expr.as_ref().display_expr().to_string());
+            });
         }
     }
 }

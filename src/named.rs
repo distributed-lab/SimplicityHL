@@ -56,7 +56,7 @@ impl Nullable for NoDisconnect {
 /// [`simplicity::ConstructNode`] with named witness nodes.
 ///
 /// Nodes other than witness don't have names.
-pub type ConstructNode<J> = Node<WithNames<node::Construct<J>>>;
+pub type ConstructNode<'brand, J> = Node<WithNames<node::Construct<'brand, J>>>;
 
 /// [`simplicity::CommitNode`] with named witness nodes.
 ///
@@ -253,15 +253,15 @@ pub fn populate_witnesses<J: Jet>(
 // This awkward construction is required by rust-simplicity to implement WitnessConstructible
 // for Node<WithNames<Construct>>. See
 //     https://docs.rs/simplicity-lang/latest/simplicity/node/trait.WitnessConstructible.html#foreign-impls
-impl<J: Jet> WitnessConstructible<WitnessName> for node::ConstructData<J> {
-    fn witness(inference_context: &types::Context, _: WitnessName) -> Self {
+impl<'brand, J: Jet> WitnessConstructible<'brand, WitnessName> for node::ConstructData<'brand, J> {
+    fn witness(inference_context: &types::Context<'brand>, _: WitnessName) -> Self {
         WitnessConstructible::<Option<_>>::witness(inference_context, None)
     }
 }
 
 /// More constructors for types that implement [`CoreConstructible`].
-pub trait CoreExt: CoreConstructible + Sized {
-    fn h(inference_context: &types::Context) -> PairBuilder<Self> {
+pub trait CoreExt<'brand>: CoreConstructible<'brand> + Sized {
+    fn h(inference_context: &types::Context<'brand>) -> PairBuilder<Self> {
         PairBuilder::iden(inference_context)
     }
 
@@ -273,7 +273,7 @@ pub trait CoreExt: CoreConstructible + Sized {
         SelectorBuilder::default().i()
     }
 
-    fn bit(inference_context: &types::Context, bit: bool) -> PairBuilder<Self> {
+    fn bit(inference_context: &types::Context<'brand>, bit: bool) -> PairBuilder<Self> {
         match bit {
             false => PairBuilder::unit(inference_context).injl(),
             true => PairBuilder::unit(inference_context).injr(),
@@ -292,7 +292,7 @@ pub trait CoreExt: CoreConstructible + Sized {
     /// ---------------------------
     /// comp unit scribe(v) : A → B
     /// ```
-    fn unit_scribe(inference_context: &types::Context, value: &simplicity::Value) -> Self {
+    fn unit_scribe(inference_context: &types::Context<'brand>, value: &simplicity::Value) -> Self {
         Self::comp(
             &Self::unit(inference_context),
             &Self::scribe(inference_context, value),
@@ -321,7 +321,7 @@ pub trait CoreExt: CoreConstructible + Sized {
     }
 
     /// `case false true` always type-checks.
-    fn case_false_true(inference_context: &types::Context) -> Self {
+    fn case_false_true(inference_context: &types::Context<'brand>) -> Self {
         Self::case(
             &Self::bit_false(inference_context),
             &Self::bit_true(inference_context),
@@ -330,7 +330,7 @@ pub trait CoreExt: CoreConstructible + Sized {
     }
 
     /// `case true false` always type-checks.
-    fn case_true_false(inference_context: &types::Context) -> Self {
+    fn case_true_false(inference_context: &types::Context<'brand>) -> Self {
         Self::case(
             &Self::bit_true(inference_context),
             &Self::bit_false(inference_context),
@@ -339,7 +339,7 @@ pub trait CoreExt: CoreConstructible + Sized {
     }
 }
 
-impl<N: CoreConstructible> CoreExt for N {}
+impl<'brand, N: CoreConstructible<'brand>> CoreExt<'brand> for N {}
 
 /// Builder of expressions that contain
 /// `take`, `drop` and `iden` only.
@@ -360,7 +360,7 @@ impl<P> Default for SelectorBuilder<P> {
     }
 }
 
-impl<P: CoreExt> SelectorBuilder<P> {
+impl<'brand, P: CoreExt<'brand>> SelectorBuilder<P> {
     /// Select the first component '0' of the input pair.
     pub fn o(mut self) -> Self {
         self.selection.push(false);
@@ -384,7 +384,7 @@ impl<P: CoreExt> SelectorBuilder<P> {
     }
 
     /// Select the current input value.
-    pub fn h(self, inference_context: &types::Context) -> PairBuilder<P> {
+    pub fn h(self, inference_context: &types::Context<'brand>) -> PairBuilder<P> {
         let mut expr = PairBuilder::iden(inference_context);
         for bit in self.selection.into_iter().rev() {
             match bit {
@@ -406,7 +406,7 @@ impl<P: CoreExt> SelectorBuilder<P> {
 #[derive(Debug, Clone, Hash)]
 pub struct PairBuilder<P>(P);
 
-impl<P: CoreExt> PairBuilder<P> {
+impl<'brand, P: CoreExt<'brand>> PairBuilder<P> {
     /// Create the unit expression.
     ///
     /// ## Invariant
@@ -417,7 +417,7 @@ impl<P: CoreExt> PairBuilder<P> {
     /// ------------
     /// unit : A → 1
     /// ```
-    pub fn unit(inference_context: &types::Context) -> Self {
+    pub fn unit(inference_context: &types::Context<'brand>) -> Self {
         Self(P::unit(inference_context))
     }
 
@@ -431,7 +431,7 @@ impl<P: CoreExt> PairBuilder<P> {
     /// ------------
     /// iden : A → A
     /// ```
-    pub fn iden(inference_context: &types::Context) -> Self {
+    pub fn iden(inference_context: &types::Context<'brand>) -> Self {
         Self(P::iden(inference_context))
     }
 
@@ -445,7 +445,7 @@ impl<P: CoreExt> PairBuilder<P> {
     /// ------------
     /// fail : A → B
     /// ```
-    pub fn fail(inference_context: &types::Context, entropy: FailEntropy) -> Self {
+    pub fn fail(inference_context: &types::Context<'brand>, entropy: FailEntropy) -> Self {
         Self(P::fail(inference_context, entropy))
     }
 
@@ -596,12 +596,15 @@ impl<P: CoreExt> PairBuilder<P> {
     /// ---------------------------
     /// comp unit scribe(v) : A → B
     /// ```
-    pub fn unit_scribe(inference_context: &types::Context, value: &simplicity::Value) -> Self {
+    pub fn unit_scribe(
+        inference_context: &types::Context<'brand>,
+        value: &simplicity::Value,
+    ) -> Self {
         Self(P::unit_scribe(inference_context, value))
     }
 }
 
-impl<P: WitnessConstructible<WitnessName>> PairBuilder<P> {
+impl<'brand, P: WitnessConstructible<'brand, WitnessName>> PairBuilder<P> {
     /// Create the witness expression.
     ///
     /// ## Invariant
@@ -612,7 +615,7 @@ impl<P: WitnessConstructible<WitnessName>> PairBuilder<P> {
     /// ---------------
     /// witness : A → B
     /// ```
-    pub fn witness(inference_context: &types::Context, witness: WitnessName) -> Self {
+    pub fn witness(inference_context: &types::Context<'brand>, witness: WitnessName) -> Self {
         Self(P::witness(inference_context, witness))
     }
 }

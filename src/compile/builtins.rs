@@ -15,12 +15,15 @@ use crate::named::CoreExt;
 /// The fold `(fold f)_n : E^n × A → A`
 /// takes the array of type `E^n` and an initial accumulator of type `A`,
 /// and it produces the final accumulator of type `A`.
-pub fn array_fold(size: NonZeroUsize, f: &ProgNode) -> Result<ProgNode, simplicity::types::Error> {
+pub fn array_fold<'brand>(
+    size: NonZeroUsize,
+    f: &ProgNode<'brand>,
+) -> Result<ProgNode<'brand>, simplicity::types::Error> {
     /// Recursively fold the array using the precomputed folding functions.
-    fn tree_fold(
+    fn tree_fold<'brand>(
         n: usize,
-        f_powers_of_two: &[ProgNode],
-    ) -> Result<ProgNode, simplicity::types::Error> {
+        f_powers_of_two: &[ProgNode<'brand>],
+    ) -> Result<ProgNode<'brand>, simplicity::types::Error> {
         // Array is a left-balanced (right-associative) binary tree.
         let max_pow2 = n.ilog2() as usize;
         debug_assert!(max_pow2 < f_powers_of_two.len());
@@ -38,10 +41,10 @@ pub fn array_fold(size: NonZeroUsize, f: &ProgNode) -> Result<ProgNode, simplici
     }
 
     /// Fold the two arrays applying the folding function sequentially left -> right.
-    fn f_array_fold(
-        f_left: &ProgNode,
-        f_right: &ProgNode,
-    ) -> Result<ProgNode, simplicity::types::Error> {
+    fn f_array_fold<'brand>(
+        f_left: &ProgNode<'brand>,
+        f_right: &ProgNode<'brand>,
+    ) -> Result<ProgNode<'brand>, simplicity::types::Error> {
         // The input is a tuple ((L, R), acc): ([E; n], A) where:
         // - L and R are arrays of varying size E^x and E^y respectively (x + y = n).
         // - acc is an accumulator of type A.
