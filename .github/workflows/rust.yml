@@ -169,3 +169,23 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - run: rustup target add wasm32-unknown-unknown
       - run: cargo check --target wasm32-unknown-unknown
+
+  Fuzz:
+    name: Check Fuzz
+    needs: Prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - name: "Checkout repo"
+        uses: actions/checkout@v4
+
+      - name: "Select nightly toolchain"
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ needs.Prepare.outputs.nightly_version }}
+
+      - name: "Check fuzz crate"
+        run: |
+          cargo check --manifest-path=fuzz/Cargo.toml
+

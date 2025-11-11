@@ -1,12 +1,12 @@
-#![no_main]
+#![cfg_attr(fuzzing, no_main)]
 
-use arbitrary::Arbitrary;
-use libfuzzer_sys::fuzz_target;
+#[cfg(any(fuzzing, test))]
+fn do_test(data: &[u8]) {
+    use arbitrary::Arbitrary;
 
-use simplicityhl::error::WithFile;
-use simplicityhl::{ast, named, parse, ArbitraryOfType, Arguments};
+    use simplicityhl::error::WithFile;
+    use simplicityhl::{ast, named, parse, ArbitraryOfType, Arguments};
 
-fuzz_target!(|data: &[u8]| {
     let mut u = arbitrary::Unstructured::new(data);
     let parse_program = match parse::Program::arbitrary(&mut u) {
         Ok(x) => x,
@@ -24,6 +24,24 @@ fuzz_target!(|data: &[u8]| {
         .compile(arguments, false)
         .with_file("")
         .expect("AST should compile with given arguments");
-    let _simplicity_commit = named::to_commit_node(&simplicity_named_construct)
-        .expect("Conversion to commit node should never fail");
-});
+    let _simplicity_commit = named::forget_names(&simplicity_named_construct);
+}
+
+#[cfg(fuzzing)]
+libfuzzer_sys::fuzz_target!(|data| do_test(data));
+
+#[cfg(not(fuzzing))]
+fn main() {}
+
+#[cfg(test)]
+mod tests {
+    use base64::Engine;
+
+    #[test]
+    fn duplicate_crash() {
+        let data = base64::prelude::BASE64_STANDARD
+            .decode("Cg==")
+            .expect("base64 should be valid");
+        super::do_test(&data);
+    }
+}
