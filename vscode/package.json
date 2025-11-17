@@ -69,7 +69,14 @@
           "description": "Do not show missing LSP executable warning."
         }
       }
-    }
+    },
+    "commands": [
+      {
+        "command": "simplicityhl.restartServer",
+        "title": "Restart server",
+        "category": "SimplicityHL"
+      }
+    ]
   },
   "license": "MIT",
   "scripts": {
