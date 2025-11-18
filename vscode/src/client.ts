@@ -59,4 +59,19 @@ export class LspClient {
     }
     return this.client.stop();
   }
+
+  public async restart(): Promise<void> {
+    if (!this.client) {
+      window.showWarningMessage("LSP client not initialized. Cannot restart.");
+      return;
+    }
+
+    try {
+      await this.client.stop();
+      await this.client.start();
+      window.showInformationMessage("SimplicityHL Language Server restarted successfully!");
+    } catch (e) {
+      window.showErrorMessage(`Failed to restart LSP: ${e}`);
+    }
+  }
 }
