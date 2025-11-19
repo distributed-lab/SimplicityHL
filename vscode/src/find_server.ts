@@ -1,10 +1,11 @@
-import * as cp from "child_process";
+import * as os from "os";
 import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
-import { env, ProgressLocation, Uri, window, workspace } from "vscode";
+
 import process from "node:process";
-import { spawn } from "node:child_process";
+import * as cp from "child_process";
+
+import { env, ProgressLocation, Uri, window, workspace } from "vscode";
 
 function findExecutable(command: string): string | null {
   try {
@@ -57,8 +58,8 @@ async function installServer(command: string) {
   if (!cargoPath) {
     throw new Error("Unable to find 'cargo'. Please ensure Rust is installed and in your PATH.");
   }
-  const action = findExecutable(command) ? "Updating" : "Installing";
 
+  const action = findExecutable(command) ? "Updating" : "Installing";
 
   return window.withProgress({
     location: ProgressLocation.Window,
@@ -66,7 +67,7 @@ async function installServer(command: string) {
     cancellable: false
   }, async (progress) => {
     return new Promise<void>((resolve, reject) => {
-      const installProcess = spawn(cargoPath!, ["install", "--color", "never", command]);
+      const installProcess = cp.spawn(cargoPath!, ["install", "--color", "never", command]);
 
       const reportProgress = (data: Buffer) => {
         const lines = data.toString()
@@ -96,7 +97,6 @@ async function installServer(command: string) {
     });
   });
 }
-
 
 export async function ensureExecutable(
   command: string,
