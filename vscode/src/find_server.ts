@@ -62,12 +62,17 @@ async function installServer(command: string) {
   const action = findExecutable(command) ? "Updating" : "Installing";
 
   return window.withProgress({
-    location: ProgressLocation.Window,
+    location: ProgressLocation.Notification,
     title: `${action} ${command}`,
-    cancellable: false
-  }, async (progress) => {
+    cancellable: true
+  }, async (progress, token) => {
     return new Promise<void>((resolve, reject) => {
       const installProcess = cp.spawn(cargoPath!, ["install", "--color", "never", command]);
+
+      token.onCancellationRequested(() => {
+        installProcess.kill("SIGTERM");
+        reject(new Error("Installation canceled"));
+      });
 
       const reportProgress = (data: Buffer) => {
         const lines = data.toString()
