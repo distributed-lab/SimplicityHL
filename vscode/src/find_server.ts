@@ -109,12 +109,17 @@ export async function ensureExecutable(
   const cargoPath = findExecutable("cargo");
   const config = workspace.getConfiguration("simplicityhl");
 
-  const suppressWarning = config.get<boolean>(
-    "suppressMissingLspWarning",
-    false,
-  );
+  let serverPath = findExecutable(command);
 
-  if (!cargoPath && !suppressWarning) {
+  if (!cargoPath && !serverPath) {
+    const suppressWarning = config.get<boolean>(
+      "suppressMissingLspWarning",
+      false,
+    );
+    if (suppressWarning) {
+      return null;
+    }
+
     const choice = await window.showWarningMessage(
       `To use SimplicityHL language server, please install cargo`,
       "Learn more",
@@ -133,12 +138,21 @@ export async function ensureExecutable(
   }
 
   if (cargoPath) {
-    try {
-      await installServer(command);
-      return findExecutable(command);
-    } catch (err) {
-      window.showErrorMessage(err);
-      return null;
+    const disableAutoupdate = config.get<boolean>("disableAutoupdate", false);
+
+    const shouldInstallOrUpdate = (!serverPath) || !disableAutoupdate;
+
+    if (shouldInstallOrUpdate) {
+      try {
+        await installServer(command);
+
+        serverPath = findExecutable(command);
+      } catch (err) {
+        window.showErrorMessage(err);
+        return null;
+      }
     }
   }
+
+  return serverPath;
 }

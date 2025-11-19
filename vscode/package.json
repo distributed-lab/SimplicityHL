@@ -67,6 +67,11 @@
           "type": "boolean",
           "default": false,
           "description": "Do not show missing LSP executable warning."
+        },
+        "simplicityhl.disableAutoupdate": {
+          "type": "boolean",
+          "default": false,
+          "description": "Do not autoupdate LSP server."
         }
       }
     },
