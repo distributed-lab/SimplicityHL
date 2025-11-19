@@ -53,23 +53,20 @@ function findExecutable(command: string): string | null {
 }
 
 async function installServer(command: string) {
-  const cargoExe = findExecutable("cargo");
-  if (!cargoExe) {
+  const cargoPath = findExecutable("cargo");
+  if (!cargoPath) {
     throw new Error("Unable to find 'cargo'. Please ensure Rust is installed and in your PATH.");
   }
+  let action = findExecutable(command) ? "Updating" : "Installing";
+
 
   return window.withProgress({
-    location: ProgressLocation.Notification,
-    title: `Installing ${command}`,
-    cancellable: true
-  }, async (progress, token) => {
+    location: ProgressLocation.Window,
+    title: `${action} ${command}`,
+    cancellable: false
+  }, async (progress) => {
     return new Promise<void>((resolve, reject) => {
-      const installProcess = spawn(cargoExe!, ["install", "--color", "never", command]);
-
-      token.onCancellationRequested(() => {
-        installProcess.kill("SIGTERM");
-        reject(new Error("Installation canceled"));
-      });
+      const installProcess = spawn(cargoPath!, ["install", "--color", "never", command]);
 
       const reportProgress = (data: Buffer) => {
         const lines = data.toString()
@@ -104,7 +101,7 @@ async function installServer(command: string) {
 export async function ensureExecutable(
   command: string,
 ): Promise<string | null> {
-  const exePath = findExecutable(command);
+  const cargoPath = findExecutable("cargo");
   const config = workspace.getConfiguration("simplicityhl");
 
   const suppressWarning = config.get<boolean>(
@@ -112,27 +109,15 @@ export async function ensureExecutable(
     false,
   );
 
-  if (!exePath && !suppressWarning) {
+  if (!cargoPath && !suppressWarning) {
     const choice = await window.showWarningMessage(
-      `LSP server "${command}" was not found in PATH or common locations. To use language server feautures, please install server to PATH`,
-      "Install server",
+      `To use SimplicityHL language server, please install cargo`,
       "Learn more",
       "Don't show again",
     );
 
-    if (choice === "Install server") {
-      try {
-        await installServer(command);
-
-        window.showInformationMessage("Language server installed successfully!");
-        return ensureExecutable(command);
-      } catch (err) {
-        window.showErrorMessage(`Failed to install language server: ${err}`);
-        return null;
-      }
-    }
-    else if (choice === "Learn more") {
-      const url = "https://github.com/BlockstreamResearch/SimplicityHL/tree/master/lsp#installation";
+    if (choice === "Learn more") {
+      const url = "https://rust-lang.org/tools/install";
       await env.openExternal(Uri.parse(url));
     } else if (choice === "Don't show again") {
       const config = workspace.getConfiguration("simplicityhl");
@@ -141,5 +126,14 @@ export async function ensureExecutable(
 
     return null;
   }
-  return exePath;
+
+  if (cargoPath) {
+    try {
+      await installServer(command);
+      return findExecutable(command);
+    } catch (err) {
+      window.showErrorMessage(err);
+      return null;
+    }
+  }
 }
