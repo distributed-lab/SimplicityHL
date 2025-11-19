@@ -138,13 +138,13 @@ export async function ensureExecutable(
   }
 
   if (!cargoPath) {
-  	  return serverPath;
+    return serverPath;
   }
-  
+
   const disableAutoupdate = config.get<boolean>("disableAutoupdate", false);
-  
-  if (!serverPath || !disableAutoupdate) {
-  	  return serverPath;
+
+  if (serverPath && disableAutoupdate) {
+    return serverPath;
   }
 
   try {
