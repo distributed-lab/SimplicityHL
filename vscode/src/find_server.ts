@@ -137,21 +137,23 @@ export async function ensureExecutable(
     return null;
   }
 
-  if (cargoPath) {
-    const disableAutoupdate = config.get<boolean>("disableAutoupdate", false);
+  if (!cargoPath) {
+  	  return serverPath;
+  }
+  
+  const disableAutoupdate = config.get<boolean>("disableAutoupdate", false);
+  
+  if (!serverPath || !disableAutoupdate) {
+  	  return serverPath;
+  }
 
-    const shouldInstallOrUpdate = (!serverPath) || !disableAutoupdate;
+  try {
+    await installServer(command);
 
-    if (shouldInstallOrUpdate) {
-      try {
-        await installServer(command);
-
-        serverPath = findExecutable(command);
-      } catch (err) {
-        window.showErrorMessage(err);
-        return null;
-      }
-    }
+    serverPath = findExecutable(command);
+  } catch (err) {
+    window.showErrorMessage(err);
+    return null;
   }
 
   return serverPath;
