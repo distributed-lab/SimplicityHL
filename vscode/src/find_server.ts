@@ -57,7 +57,7 @@ async function installServer(command: string) {
   if (!cargoPath) {
     throw new Error("Unable to find 'cargo'. Please ensure Rust is installed and in your PATH.");
   }
-  let action = findExecutable(command) ? "Updating" : "Installing";
+  const action = findExecutable(command) ? "Updating" : "Installing";
 
 
   return window.withProgress({
