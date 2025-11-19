@@ -1,9 +1,11 @@
-import * as cp from "child_process";
+import * as os from "os";
 import * as fs from "fs";
 import * as path from "path";
-import * as os from "os";
-import { env, Uri, window, workspace } from "vscode";
+
 import process from "node:process";
+import * as cp from "child_process";
+
+import { env, ProgressLocation, Uri, window, workspace } from "vscode";
 
 function findExecutable(command: string): string | null {
   try {
@@ -51,27 +53,81 @@ function findExecutable(command: string): string | null {
   return null;
 }
 
+async function installServer(command: string) {
+  const cargoPath = findExecutable("cargo");
+  if (!cargoPath) {
+    throw new Error("Unable to find 'cargo'. Please ensure Rust is installed and in your PATH.");
+  }
+
+  const action = findExecutable(command) ? "Updating" : "Installing";
+
+  return window.withProgress({
+    location: ProgressLocation.Notification,
+    title: `${action} ${command}`,
+    cancellable: true
+  }, async (progress, token) => {
+    return new Promise<void>((resolve, reject) => {
+      const installProcess = cp.spawn(cargoPath!, ["install", "--color", "never", command]);
+
+      token.onCancellationRequested(() => {
+        installProcess.kill("SIGTERM");
+        reject(new Error("Installation canceled"));
+      });
+
+      const reportProgress = (data: Buffer) => {
+        const lines = data.toString()
+          .split(/\r?\n/)
+          .map(l => l.trim())
+
+        for (const line of lines) {
+          if (line.startsWith("Compiling") && line !== "Compiling") {
+            progress.report({ message: line });
+          }
+        }
+      };
+
+      installProcess.stderr?.on('data', reportProgress);
+
+      installProcess.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`Installation failed with exit code ${code}`));
+        }
+      });
+
+      installProcess.on('error', (err) => {
+        reject(new Error(`Failed to start cargo process: ${err.message}`));
+      });
+    });
+  });
+}
+
 export async function ensureExecutable(
   command: string,
 ): Promise<string | null> {
-  const exePath = findExecutable(command);
+  const cargoPath = findExecutable("cargo");
   const config = workspace.getConfiguration("simplicityhl");
 
-  const suppressWarning = config.get<boolean>(
-    "suppressMissingLspWarning",
-    false,
-  );
+  let serverPath = findExecutable(command);
 
-  if (!exePath && !suppressWarning) {
+  if (!cargoPath && !serverPath) {
+    const suppressWarning = config.get<boolean>(
+      "suppressMissingLspWarning",
+      false,
+    );
+    if (suppressWarning) {
+      return null;
+    }
+
     const choice = await window.showWarningMessage(
-      `LSP server "${command}" was not found in PATH or common locations. To use language server feautures, please install server to PATH`,
+      `To use SimplicityHL language server, please install cargo`,
       "Learn more",
       "Don't show again",
-      "Close",
     );
 
     if (choice === "Learn more") {
-      const url = "https://github.com/distributed-lab/simplicityhl-lsp";
+      const url = "https://rust-lang.org/tools/install";
       await env.openExternal(Uri.parse(url));
     } else if (choice === "Don't show again") {
       const config = workspace.getConfiguration("simplicityhl");
@@ -80,5 +136,25 @@ export async function ensureExecutable(
 
     return null;
   }
-  return exePath;
+
+  if (!cargoPath) {
+    return serverPath;
+  }
+
+  const disableAutoupdate = config.get<boolean>("disableAutoupdate", false);
+
+  if (serverPath && disableAutoupdate) {
+    return serverPath;
+  }
+
+  try {
+    await installServer(command);
+
+    serverPath = findExecutable(command);
+  } catch (err) {
+    window.showErrorMessage(err);
+    return null;
+  }
+
+  return serverPath;
 }

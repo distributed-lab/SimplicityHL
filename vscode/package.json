@@ -2,7 +2,7 @@
   "name": "simplicityhl",
   "displayName": "SimplicityHL Language Support",
   "description": "Syntax highlighting and autocompletion for SimplicityHL (Simfony) language",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "Blockstream",
   "repository": {
     "type": "git",
@@ -67,6 +67,11 @@
           "type": "boolean",
           "default": false,
           "description": "Do not show missing LSP executable warning."
+        },
+        "simplicityhl.disableAutoupdate": {
+          "type": "boolean",
+          "default": false,
+          "description": "Do not autoupdate LSP server."
         }
       }
     },
