@@ -10,8 +10,8 @@ use tower_lsp_server::lsp_types::{
     CompletionItem, CompletionItemKind, Documentation, InsertTextFormat, MarkupContent, MarkupKind,
 };
 
-use tokens::lex_tokens;
-use tokens::Token;
+use tokens::parse;
+use tokens::CompletionType;
 
 /// Build and provide [`CompletionItem`] for jets and builtin functions.
 #[derive(Debug)]
@@ -88,22 +88,12 @@ impl CompletionProvider {
         prefix: &str,
         functions: &[(&Function, &str)],
     ) -> Option<Vec<CompletionItem>> {
-        let tokens = match lex_tokens(prefix) {
-            Ok((_, mut t)) => {
-                t.reverse();
-                t
-            }
-            Err(_) => return None,
-        };
+        let completion_type = parse(prefix)?;
 
-        match tokens.as_slice() {
-            [Token::Jet, ..] => Some(self.jets.clone()),
+        match completion_type {
+            CompletionType::Jet => Some(self.jets.clone()),
 
-            // Case for ": type = <", so we can return completion for specific type, or generic one
-            // if it is not on default type casts.
-            [Token::OpenAngle, Token::EqualSign, Token::Identifier(type_name), Token::Colon, ..]
-            | [Token::Identifier(_) | Token::OpenBracket, Token::OpenAngle, Token::EqualSign, Token::Identifier(type_name), Token::Colon, ..] =>
-            {
+            CompletionType::Assignment(type_name) => {
                 let to = type_name.as_str();
 
                 if let Some(from) = type_cast::TYPE_CASTS.get(to) {
@@ -120,8 +110,7 @@ impl CompletionProvider {
                 Some(self.type_casts.clone())
             }
 
-            // Case for ">::" -- this structure is only present for into keyword.
-            [Token::DoubleColon, Token::CloseAngle, ..] => Some(vec![CompletionItem {
+            CompletionType::ClosingType => Some(vec![CompletionItem {
                 label: "into".to_string(),
                 kind: Some(CompletionItemKind::FUNCTION),
                 detail: Some("Cast into type".to_string()),
@@ -131,7 +120,7 @@ impl CompletionProvider {
                 ..Default::default()
             }]),
 
-            [Token::Colon | Token::OpenAngle, ..] => None,
+            CompletionType::NonCompletionSymbol => None,
 
             _ => {
                 let mut completions = CompletionProvider::get_function_completions(functions);
