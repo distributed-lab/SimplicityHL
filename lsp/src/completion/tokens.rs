@@ -152,6 +152,7 @@ pub fn parse(input: &str) -> Option<CompletionType> {
 
     completion.1.last().cloned()
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
