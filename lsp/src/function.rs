@@ -26,16 +26,6 @@ impl Functions {
         self.map.get(name).map(|(func, doc)| (func, doc))
     }
 
-    /// Retrieves a reference to a parsed function by name.
-    pub fn get_func(&self, name: &str) -> Option<&Function> {
-        self.map.get(name).map(|(func, _)| func)
-    }
-
-    /// Returns a vector of all parsed functions.
-    pub fn functions(&self) -> Vec<&Function> {
-        self.map.values().map(|(func, _)| func).collect()
-    }
-
     /// Returns a vector of (function name, function) pairs.
     pub fn functions_and_docs(&self) -> Vec<(&Function, &str)> {
         self.map

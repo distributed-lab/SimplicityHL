@@ -13,6 +13,8 @@ use tower_lsp_server::lsp_types::{
 use tokens::parse;
 use tokens::CompletionType;
 
+use crate::treesitter::variable::VariableInfo;
+
 /// Build and provide [`CompletionItem`] for jets and builtin functions.
 #[derive(Debug)]
 pub struct CompletionProvider {
@@ -87,6 +89,7 @@ impl CompletionProvider {
         &self,
         prefix: &str,
         functions: &[(&Function, &str)],
+        variables: &[VariableInfo],
     ) -> Option<Vec<CompletionItem>> {
         let completion_type = parse(prefix)?;
 
@@ -125,6 +128,7 @@ impl CompletionProvider {
             _ => {
                 let mut completions = CompletionProvider::get_function_completions(functions);
 
+                completions.extend(variables.iter().map(CompletionItem::from));
                 completions.extend_from_slice(&self.builtin);
                 completions.extend_from_slice(&self.modules);
 

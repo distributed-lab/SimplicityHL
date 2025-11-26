@@ -20,10 +20,12 @@ env_logger = "0.11.8"
 thiserror = "2.0.17"
 
 ropey = "1.6.1"
-miniscript = "12"
 simplicityhl = { version = "0.3.0" }
 nom = "8.0.0"
 lazy_static = "1.5.0"
+
+tree-sitter-simplicityhl = "0.1.3"
+tree-sitter = "0.25.10"
 
 [lints.rust]
 unsafe_code = "deny"

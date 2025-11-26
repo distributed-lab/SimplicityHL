@@ -34,6 +34,29 @@ pub fn get_builtin_functions() -> Vec<FunctionTemplate> {
     functions.iter().filter_map(match_callname).collect()
 }
 
+pub fn string_to_callname(text: &str) -> Option<CallName> {
+    let ty = AliasedType::from(AliasName::from_str_unchecked("T"));
+    let function_name = FunctionName::from_str_unchecked("fn");
+    let some = NonZero::new(1)?;
+
+    let callname = match text {
+        "unwrap_left" => CallName::UnwrapLeft(ty),
+        "unwrap_right" => CallName::UnwrapRight(ty),
+        "unwrap" => CallName::Unwrap,
+        "is_none" => CallName::IsNone(ty),
+        "assert!" => CallName::Assert,
+        "panic!" => CallName::Panic,
+        "dbg!" => CallName::Debug,
+        "into" => CallName::TypeCast(ty),
+        "fold" => CallName::Fold(function_name, NonZeroPow2Usize::TWO),
+        "array_fold" => CallName::ArrayFold(function_name, some),
+        "for_while" => CallName::ForWhile(function_name),
+        _ => return None,
+    };
+
+    Some(callname)
+}
+
 /// Match [`simplicityhl::parse::CallName`] and return [`FunctionTemplate`]
 pub fn match_callname(call: &CallName) -> Option<FunctionTemplate> {
     let doc = builtin_documentation(call);

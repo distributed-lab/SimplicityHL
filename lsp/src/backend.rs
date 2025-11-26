@@ -28,21 +28,19 @@ use simplicityhl::{
     parse::ParseFromStr,
 };
 
+use crate::completion::builtin::string_to_callname;
 use crate::completion::{self, CompletionProvider};
 use crate::error::LspError;
 use crate::function::Functions;
-use crate::utils::{
-    find_all_references, find_function_name_range, find_related_call, get_call_span,
-    get_comments_from_lines, position_to_span, span_contains, span_to_positions,
-};
+use crate::treesitter::parser::{self, AstContext};
+use crate::utils::{get_comments_from_lines, span_to_positions};
 
-#[derive(Debug)]
 struct Document {
     functions: Functions,
+    ast: AstContext,
     text: Rope,
 }
 
-#[derive(Debug)]
 pub struct Backend {
     client: Client,
 
@@ -176,7 +174,11 @@ impl LanguageServer for Backend {
 
         let completions = self
             .completion_provider
-            .process_completions(prefix, &doc.functions.functions_and_docs())
+            .process_completions(
+                prefix,
+                &doc.functions.functions_and_docs(),
+                &doc.ast.scopes.get_visible_variables(pos, false),
+            )
             .map(CompletionResponse::Array);
 
         Ok(completions)
@@ -189,22 +191,20 @@ impl LanguageServer for Backend {
         let doc = documents
             .get(uri)
             .ok_or(LspError::DocumentNotFound(uri.to_owned()))?;
-        let functions = doc.functions.functions();
 
         let token_pos = params.text_document_position_params.position;
-
-        let token_span = position_to_span(token_pos)?;
-        let Ok(Some(call)) = find_related_call(&functions, token_span) else {
+        let Some(token) = doc
+            .ast
+            .get_token_on_position(&doc.text.to_string(), token_pos)
+        else {
             return Ok(None);
         };
 
-        let call_span = get_call_span(call)?;
-        let (start, end) = span_to_positions(&call_span)?;
-
-        let description = match call.name() {
-            parse::CallName::Jet(jet) => {
+        let token_text = token.text;
+        let description = match token.token {
+            parser::Token::Jet => {
                 let element =
-                    simplicityhl::simplicity::jet::Elements::from_str(format!("{jet}").as_str())
+                    simplicityhl::simplicity::jet::Elements::from_str(token_text.as_str())
                         .map_err(|err| LspError::ConversionFailed(err.to_string()))?;
 
                 let template = completion::jet::jet_to_template(element);
@@ -216,12 +216,12 @@ impl LanguageServer for Backend {
                     template.description
                 )
             }
-            parse::CallName::Custom(func) => {
+            parser::Token::Function => {
                 let (function, function_doc) =
                     doc.functions
-                        .get(func.as_inner())
+                        .get(&token_text)
                         .ok_or(LspError::FunctionNotFound(format!(
-                            "Function {func} is not found"
+                            "Function {token_text} is not found"
                         )))?;
 
                 let template = completion::function_to_template(function, function_doc);
@@ -233,8 +233,12 @@ impl LanguageServer for Backend {
                     template.description
                 )
             }
-            other => {
-                let Some(template) = completion::builtin::match_callname(other) else {
+            parser::Token::BuiltinFunction => {
+                let Some(callname) = string_to_callname(&token_text) else {
+                    return Ok(None);
+                };
+
+                let Some(template) = completion::builtin::match_callname(&callname) else {
                     return Ok(None);
                 };
                 format!(
@@ -245,6 +249,29 @@ impl LanguageServer for Backend {
                     template.description
                 )
             }
+            parser::Token::Identifier => {
+                let vars = doc.ast.scopes.get_visible_variables(token_pos, true);
+
+                let Some(definition) = vars.iter().find(|&var| var.name == token_text) else {
+                    return Ok(None);
+                };
+
+                format!(
+                    "```simplicityhl\nlet {}: {}\n```",
+                    definition.name, definition.ty
+                )
+            }
+            parser::Token::BuiltinAlias => {
+                let Some(info) = crate::documentation::alias::type_info(&token_text) else {
+                    return Ok(None);
+                };
+
+                format!(
+                    "```simplicityhl\ntype {} = {}\n```\n{}",
+                    token_text, info.0, info.1
+                )
+            }
+            parser::Token::Alias => return Ok(None),
         };
 
         Ok(Some(Hover {
@@ -252,7 +279,7 @@ impl LanguageServer for Backend {
                 kind: MarkupKind::Markdown,
                 value: description,
             }),
-            range: Some(Range { start, end }),
+            range: Some(token.range),
         }))
     }
 
@@ -266,46 +293,35 @@ impl LanguageServer for Backend {
         let doc = documents
             .get(uri)
             .ok_or(LspError::DocumentNotFound(uri.to_owned()))?;
-        let functions = doc.functions.functions();
 
-        let token_position = params.text_document_position_params.position;
-        let token_span = position_to_span(token_position)?;
+        let token_pos = params.text_document_position_params.position;
 
-        let Ok(Some(call)) = find_related_call(&functions, token_span) else {
-            let Some(func) = functions
-                .iter()
-                .find(|func| span_contains(func.span(), &token_span))
-            else {
-                return Ok(None);
-            };
-            let range = find_function_name_range(func, &doc.text)?;
-
-            if token_position <= range.end && token_position >= range.start {
-                return Ok(Some(GotoDefinitionResponse::from(Location::new(
-                    uri.clone(),
-                    range,
-                ))));
-            }
+        let Some(token) = doc
+            .ast
+            .get_token_on_position(&doc.text.to_string(), token_pos)
+        else {
             return Ok(None);
         };
 
-        match call.name() {
-            simplicityhl::parse::CallName::Custom(func) => {
-                let function =
-                    doc.functions
-                        .get_func(func.as_inner())
-                        .ok_or(LspError::FunctionNotFound(format!(
-                            "Function {func} is not found"
-                        )))?;
-
-                let (start, end) = span_to_positions(function.as_ref())?;
-                Ok(Some(GotoDefinitionResponse::from(Location::new(
-                    uri.clone(),
-                    Range::new(start, end),
-                ))))
+        let location = match token.token {
+            parser::Token::Function => doc
+                .ast
+                .get_function_definition(&doc.text.to_string(), &token.text)?,
+            parser::Token::Alias => doc
+                .ast
+                .get_alias_definition(&doc.text.to_string(), &token.text)?,
+            parser::Token::Identifier => doc.ast.get_identifier_definition(&token.text, token_pos),
+            _ => {
+                return Ok(None);
             }
-            _ => Ok(None),
-        }
+        };
+
+        Ok(Some(GotoDefinitionResponse::Array(
+            location
+                .iter()
+                .map(|&range| Location::new(uri.to_owned(), range))
+                .collect(),
+        )))
     }
 
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
@@ -315,53 +331,40 @@ impl LanguageServer for Backend {
         let doc = documents
             .get(uri)
             .ok_or(LspError::DocumentNotFound(uri.to_owned()))?;
-        let functions = doc.functions.functions();
 
-        let token_position = params.text_document_position.position;
+        let token_pos = params.text_document_position.position;
 
-        let token_span = position_to_span(token_position)?;
-
-        let call_name =
-            find_related_call(&functions, token_span)?.map(simplicityhl::parse::Call::name);
-
-        match call_name {
-            Some(parse::CallName::Custom(_)) | None => {}
-            Some(name) => {
-                return Ok(Some(
-                    find_all_references(&functions, name)?
-                        .iter()
-                        .map(|range| Location {
-                            range: *range,
-                            uri: uri.clone(),
-                        })
-                        .collect(),
-                ));
-            }
-        }
-
-        let Some(func) = functions.iter().find(|func| match call_name {
-            Some(parse::CallName::Custom(name)) => func.name() == name,
-            _ => span_contains(func.span(), &token_span),
-        }) else {
+        let Some(token) = doc
+            .ast
+            .get_token_on_position(&doc.text.to_string(), token_pos)
+        else {
             return Ok(None);
         };
 
-        let range = find_function_name_range(func, &doc.text)?;
+        let token_text = token.text;
 
-        if (token_position <= range.end && token_position >= range.start) || call_name.is_some() {
-            Ok(Some(
-                find_all_references(&functions, &parse::CallName::Custom(func.name().clone()))?
-                    .into_iter()
-                    .chain(std::iter::once(range))
-                    .map(|range| Location {
-                        range,
-                        uri: uri.clone(),
-                    })
-                    .collect(),
-            ))
-        } else {
-            Ok(None)
-        }
+        let ranges = match token.token {
+            parser::Token::Identifier => {
+                doc.ast.get_identifier_reference(&token_text, token_pos)?
+            }
+            parser::Token::Function => doc
+                .ast
+                .get_function_reference(&doc.text.to_string(), &token_text)?,
+            parser::Token::Alias => doc
+                .ast
+                .get_alias_reference(&doc.text.to_string(), &token_text)?,
+
+            _ => {
+                return Ok(None);
+            }
+        };
+
+        Ok(Some(
+            ranges
+                .iter()
+                .map(|&range| Location::new(uri.to_owned(), range))
+                .collect(),
+        ))
     }
 }
 
@@ -421,10 +424,12 @@ impl Backend {
 }
 
 /// Create [`Document`] using parsed program and code.
-fn create_document(program: &simplicityhl::parse::Program, text: &str) -> Document {
+fn create_document(program: &simplicityhl::parse::Program, text: &str) -> Option<Document> {
     let mut document = Document {
         functions: Functions::new(),
         text: Rope::from_str(text),
+
+        ast: AstContext::new(text)?,
     };
 
     program
@@ -447,7 +452,7 @@ fn create_document(program: &simplicityhl::parse::Program, text: &str) -> Docume
             );
         });
 
-    document
+    Some(document)
 }
 
 /// Parse program using [`simplicityhl`] compiler and return [`RichError`],
@@ -460,7 +465,7 @@ fn parse_program(text: &str) -> (Option<RichError>, Option<Document>) {
 
     (
         ast::Program::analyze(&program).with_file(text).err(),
-        Some(create_document(&program, text)),
+        create_document(&program, text),
     )
 }
 
