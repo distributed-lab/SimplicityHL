@@ -3,18 +3,28 @@ use base64::engine::general_purpose::STANDARD;
 use clap::{Arg, ArgAction, Command};
 
 use simplicityhl::{Arguments, CompiledProgram};
-use std::env;
+use std::{env, fmt};
 
-// Directly returning Result<(), String> prints the error using Debug
-// Add indirection via run() to print errors using Display
-fn main() {
-    if let Err(error) = run() {
-        eprintln!("{error}");
-        std::process::exit(1);
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
+/// The compilation output.
+struct Output {
+    /// Simplicity program result, base64 encoded.
+    program: String,
+    /// Simplicity witness result, base64 encoded, if the .wit file was provided.
+    witness: Option<String>,
+}
+
+impl fmt::Display for Output {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Program:\n{}", self.program)?;
+        if let Some(witness) = &self.witness {
+            writeln!(f, "Witness:\n{}", witness)?;
+        }
+        Ok(())
     }
 }
 
-fn run() -> Result<(), String> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command = {
         Command::new(env!("CARGO_BIN_NAME"))
             .about(
@@ -31,76 +41,82 @@ fn run() -> Result<(), String> {
                     .action(ArgAction::Set)
                     .help("SimplicityHL program file to build"),
             )
-    };
-
-    let command = {
-        command.arg(
-            Arg::new("wit_file")
-                .value_name("WITNESS_FILE")
-                .action(ArgAction::Set)
-                .help("File containing the witness data"),
-        )
-    };
-
-    let matches = {
-        command
+            .arg(
+                Arg::new("wit_file")
+                    .value_name("WITNESS_FILE")
+                    .action(ArgAction::Set)
+                    .help("File containing the witness data"),
+            )
             .arg(
                 Arg::new("debug")
                     .long("debug")
                     .action(ArgAction::SetTrue)
                     .help("Include debug symbols in the output"),
             )
-            .get_matches()
+            .arg(
+                Arg::new("json")
+                    .long("json")
+                    .action(ArgAction::SetTrue)
+                    .help("Output in JSON"),
+            )
     };
+
+    let matches = command.get_matches();
 
     let prog_file = matches.get_one::<String>("prog_file").unwrap();
     let prog_path = std::path::Path::new(prog_file);
     let prog_text = std::fs::read_to_string(prog_path).map_err(|e| e.to_string())?;
     let include_debug_symbols = matches.get_flag("debug");
+    let output_json = matches.get_flag("json");
 
     let compiled = CompiledProgram::new(prog_text, Arguments::default(), include_debug_symbols)?;
 
     #[cfg(feature = "serde")]
-    let witness_opt = {
-        matches
-            .get_one::<String>("wit_file")
-            .map(|wit_file| -> Result<simplicityhl::WitnessValues, String> {
-                let wit_path = std::path::Path::new(wit_file);
-                let wit_text = std::fs::read_to_string(wit_path).map_err(|e| e.to_string())?;
-                let witness =
-                    serde_json::from_str::<simplicityhl::WitnessValues>(&wit_text).unwrap();
-                Ok(witness)
-            })
-            .transpose()?
-    };
+    let witness_opt = matches
+        .get_one::<String>("wit_file")
+        .map(|wit_file| -> Result<simplicityhl::WitnessValues, String> {
+            let wit_path = std::path::Path::new(wit_file);
+            let wit_text = std::fs::read_to_string(wit_path).map_err(|e| e.to_string())?;
+            let witness = serde_json::from_str::<simplicityhl::WitnessValues>(&wit_text).unwrap();
+            Ok(witness)
+        })
+        .transpose()?;
     #[cfg(not(feature = "serde"))]
-    let witness_opt: Option<simplicityhl::WitnessValues> = {
-        if matches.contains_id("wit_file") {
-            return Err(
-                "Program was compiled without the 'serde' feature and cannot process .wit files."
-                    .into(),
-            );
-        }
+    let witness_opt = if matches.contains_id("wit_file") {
+        return Err(
+            "Program was compiled without the 'serde' feature and cannot process .wit files."
+                .into(),
+        );
+    } else {
         None
     };
 
-    if let Some(witness) = witness_opt {
-        let satisfied = compiled.satisfy(witness)?;
-        let (program_bytes, witness_bytes) = satisfied.redeem().to_vec_with_witness();
-        println!(
-            "Program:\n{}",
-            Base64Display::new(&program_bytes, &STANDARD)
+    let (program_bytes, witness_bytes) = match witness_opt {
+        Some(witness) => {
+            let satisfied = compiled.satisfy(witness)?;
+            let (program_bytes, witness_bytes) = satisfied.redeem().to_vec_with_witness();
+            (program_bytes, Some(witness_bytes))
+        }
+        None => {
+            let program_bytes = compiled.commit().to_vec_without_witness();
+            (program_bytes, None)
+        }
+    };
+
+    let output = Output {
+        program: Base64Display::new(&program_bytes, &STANDARD).to_string(),
+        witness: witness_bytes.map(|bytes| Base64Display::new(&bytes, &STANDARD).to_string()),
+    };
+
+    if output_json {
+        #[cfg(not(feature = "serde"))]
+        return Err(
+            "Program was compiled without the 'serde' feature and cannot output JSON.".into(),
         );
-        println!(
-            "Witness:\n{}",
-            Base64Display::new(&witness_bytes, &STANDARD)
-        );
+        #[cfg(feature = "serde")]
+        println!("{}", serde_json::to_string(&output)?);
     } else {
-        let program_bytes = compiled.commit().to_vec_without_witness();
-        println!(
-            "Program:\n{}",
-            Base64Display::new(&program_bytes, &STANDARD)
-        );
+        println!("{}", output);
     }
 
     Ok(())
