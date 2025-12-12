@@ -14,6 +14,7 @@ pub mod pattern;
 #[cfg(feature = "serde")]
 mod serde;
 pub mod str;
+pub mod tracker;
 pub mod types;
 pub mod value;
 mod witness;
