@@ -1114,7 +1114,7 @@ impl<'a> Destructor<'a> {
 impl TreeLike for Destructor<'_> {
     fn as_node(&self) -> Tree<Self> {
         let (value, ty) = match self {
-            Self::Ok { value, ty } => (value.clone(), ty),
+            Self::Ok { value, ty } => (*value, ty),
             Self::WrongType => return Tree::Nullary,
         };
         match ty.as_inner() {

@@ -1,3 +1,7 @@
+# 0.4.0 - 2025-12-18
+
+* Add `DefaultTracker` [#184](https://github.com/BlockstreamResearch/SimplicityHL/pull/184)
+
 # 0.3.0 - 2025-11-04
 
 * Add `array_fold` builtin function [#145](https://github.com/BlockstreamResearch/SimplicityHL/pull/145)
