@@ -1442,10 +1442,9 @@ fn analyze_named_module(
         ModuleItem::Module(module) if module.name == name => Some(module),
         _ => None,
     });
-    let witness_module = iter
-        .next()
-        .ok_or(Error::ModuleRequired(name.shallow_clone()))
-        .with_span(from)?;
+    let Some(witness_module) = iter.next() else {
+        return Ok(HashMap::new()); // "not present" is equivalent to empty
+    };
     if iter.next().is_some() {
         return Err(Error::ModuleRedefined(name)).with_span(from);
     }

@@ -335,7 +335,6 @@ pub enum Error {
     WitnessTypeMismatch(WitnessName, ResolvedType, ResolvedType),
     WitnessReassigned(WitnessName),
     WitnessOutsideMain,
-    ModuleRequired(ModuleName),
     ModuleRedefined(ModuleName),
     ArgumentMissing(WitnessName),
     ArgumentTypeMismatch(WitnessName, ResolvedType, ResolvedType),
@@ -464,10 +463,6 @@ impl fmt::Display for Error {
             Error::WitnessOutsideMain => write!(
                 f,
                 "Witness expressions are not allowed outside the `main` function"
-            ),
-            Error::ModuleRequired(name) => write!(
-                f,
-                "Required module `{name}` is missing"
             ),
             Error::ModuleRedefined(name) => write!(
                 f,
