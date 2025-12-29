@@ -266,8 +266,11 @@ fn main() {
     #[test]
     fn missing_witness_module() {
         match WitnessValues::parse_from_str("") {
-            Ok(_) => panic!("Missing witness module was falsely accepted"),
-            Err(error) => assert!(error.to_string().contains("module `witness` is missing")),
+            Ok(v) => assert!(
+                v.iter().next().is_none(),
+                "empty witness module was parsed as nonempty"
+            ),
+            Err(error) => panic!("Missing witness module was falsely rejected: {error}"),
         }
     }
 
