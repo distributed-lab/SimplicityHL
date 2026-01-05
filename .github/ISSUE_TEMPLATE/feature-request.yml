@@ -2,7 +2,7 @@ name: Feature request
 description: Suggest a new feature
 labels: ['feature']
 assignees:
-  - imaginator
+  - delta1
 body:
   - type: input
     id: project
