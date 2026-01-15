@@ -42,13 +42,8 @@ use crate::utils::{
 };
 
 /// Semantic token type indices - must match the legend order
-#[allow(dead_code)]
 mod semantic_token_types {
     pub const FUNCTION: u32 = 0;
-    pub const PARAMETER: u32 = 1;
-    pub const VARIABLE: u32 = 2;
-    pub const TYPE: u32 = 3;
-    pub const KEYWORD: u32 = 4;
     pub const NAMESPACE: u32 = 5;
 }
 

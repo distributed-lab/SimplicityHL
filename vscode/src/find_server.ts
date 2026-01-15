@@ -7,7 +7,9 @@ import * as cp from "child_process";
 
 import { env, ProgressLocation, Uri, window, workspace } from "vscode";
 
-function findExecutable(command: string): string | null {
+// Searches for an executable in PATH and common installation directories.
+// Used by both LSP client and compiler to locate binaries (simplicityhl-lsp, simc).
+export function findExecutable(command: string): string | null {
   try {
     const resolved = cp
       .execSync(
