@@ -2,10 +2,18 @@ use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
 
+use chumsky::error::Error as ChumskyError;
+use chumsky::input::ValueInput;
+use chumsky::label::LabelError;
+use chumsky::util::MaybeRef;
+use chumsky::DefaultExpected;
+
+use itertools::Itertools;
 use line_index::{LineCol, LineIndex, TextSize};
 use simplicity::hashes::{sha256, Hash, HashEngine};
 use simplicity::{elements, Cmr};
 
+use crate::lexer::Token;
 use crate::parse::MatchPattern;
 use crate::str::{AliasName, FunctionName, Identifier, JetName, ModuleName, WitnessName};
 use crate::types::{ResolvedType, UIntType};
@@ -19,7 +27,7 @@ pub type Spanned<T> = (T, Span);
 pub struct Span {
     /// Position where the object starts, inclusively.
     pub start: usize,
-    /// Position where the object ends, inclusively.
+    /// Position where the object ends, exclusively.
     pub end: usize,
 }
 
@@ -49,13 +57,7 @@ impl Span {
 
     /// Return a slice from the given `file` that corresponds to the span.
     pub fn to_slice<'a>(&self, file: &'a str) -> Option<&'a str> {
-        if file.is_empty() && self.start == 0 && self.end == 0 {
-            Some("")
-        } else if self.start >= file.len() || self.end >= file.len() {
-            None
-        } else {
-            Some(&file[self.start..self.end])
-        }
+        file.get(self.start..self.end)
     }
 }
 
@@ -106,7 +108,11 @@ impl From<Range<usize>> for Span {
 
 impl From<&str> for Span {
     fn from(s: &str) -> Self {
-        Span::new(0, s.len() - 1)
+        if s.is_empty() {
+            Span::new(0, 0)
+        } else {
+            Span::new(0, s.len())
+        }
     }
 }
 
@@ -200,7 +206,7 @@ impl fmt::Display for RichError {
                 let start_line_index = start_pos.line as usize;
                 let end_line_index = end_pos.line as usize;
 
-                let n_spanned_lines = end_line_index - start_line_index + 1;
+                let n_spanned_lines = end_line_index.saturating_sub(start_line_index) + 1;
                 let line_num_width = (end_line_index + 1).to_string().len();
 
                 writeln!(f, "{:width$} |", " ", width = line_num_width)?;
@@ -220,29 +226,74 @@ impl fmt::Display for RichError {
                     })
                     .map_or(0, |ts| u32::from(ts) as usize);
 
-                let start_col = file[line_start_byte..self.span.start].chars().count();
+                let start_col = file[line_start_byte..self.span.start].chars().count() + 1;
 
-                let (underline_start, underline_length) = match start_line_index != end_line_index {
-                    true => (0, start_line_len),
-                    false => {
-                        let end_col = file[line_start_byte..self.span.end].chars().count();
-                        (start_col, end_col - start_col)
-                    }
+                let (underline_start, underline_length) = if start_line_index == end_line_index {
+                    let end_col = file[line_start_byte..self.span.end].chars().count() + 1;
+                    (start_col, end_col.saturating_sub(start_col))
+                } else {
+                    (0, start_line_len)
                 };
 
                 write!(f, "{:width$} |", " ", width = line_num_width)?;
-                write!(f, "{:width$}", " ", width = underline_start + 1)?;
+                write!(f, "{:width$}", " ", width = underline_start)?;
                 write!(f, "{:^<width$} ", "", width = underline_length)?;
                 write!(f, "{}", self.error)
             }
-            _ => {
-                write!(f, "{}", self.error)
-            }
+            _ => write!(f, "{}", self.error),
         }
     }
 }
 
+#[derive(Debug, Clone, Hash)]
+pub struct ErrorHandler {
+    /// File in which the error occurred.
+    file: Arc<str>,
+
+    /// Errors
+    errors: Vec<RichError>,
+}
+
+impl ErrorHandler {
+    pub fn new(file: Arc<str>) -> Self {
+        Self {
+            file,
+            errors: Vec::new(),
+        }
+    }
+
+    /// Extend existing errors with slice of new errors
+    pub fn update(&mut self, errors: &[RichError]) {
+        let new_errors = errors
+            .iter()
+            .map(|err| err.clone().with_file(Arc::clone(&self.file)));
+
+        self.errors.extend(new_errors);
+    }
+
+    pub fn get(&self) -> &[RichError] {
+        &self.errors
+    }
+}
+
+impl fmt::Display for ErrorHandler {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for err in self.get() {
+            writeln!(f, "{err}\n")?;
+        }
+        Ok(())
+    }
+}
+
+impl From<ErrorHandler> for String {
+    fn from(handler: ErrorHandler) -> Self {
+        handler.to_string()
+    }
+}
+
 impl std::error::Error for RichError {}
+
+impl std::error::Error for ErrorHandler {}
 
 impl From<RichError> for Error {
     fn from(error: RichError) -> Self {
@@ -253,6 +304,94 @@ impl From<RichError> for Error {
 impl From<RichError> for String {
     fn from(error: RichError) -> Self {
         error.to_string()
+    }
+}
+
+impl<'src, 'tokens: 'src, I> ChumskyError<'src, I> for RichError
+where
+    I: ValueInput<'src, Token = Token<'tokens>, Span = Span>,
+{
+    fn merge(self, other: Self) -> Self {
+        match (&self.error, &other.error) {
+            (Error::Grammar(_), Error::Grammar(_)) => other,
+            (Error::Grammar(_), _) => other,
+            (_, Error::Grammar(_)) => self,
+            _ => other,
+        }
+    }
+}
+
+impl<'src, 'tokens: 'src, I> LabelError<'src, I, DefaultExpected<'src, Token<'tokens>>>
+    for RichError
+where
+    I: ValueInput<'src, Token = Token<'tokens>, Span = Span>,
+{
+    fn expected_found<E>(
+        expected: E,
+        found: Option<MaybeRef<'src, Token<'tokens>>>,
+        span: Span,
+    ) -> Self
+    where
+        E: IntoIterator<Item = DefaultExpected<'src, Token<'tokens>>>,
+    {
+        let expected_tokens: Vec<String> = expected
+            .into_iter()
+            .map(|t| match t {
+                DefaultExpected::Token(maybe) => maybe.to_string(),
+                DefaultExpected::Any => "anything".to_string(),
+                DefaultExpected::SomethingElse => "something else".to_string(),
+                DefaultExpected::EndOfInput => "end of input".to_string(),
+                _ => String::new(),
+            })
+            .collect();
+
+        let found_string = found.map(|t| t.to_string());
+
+        Self {
+            error: Error::Syntax {
+                expected: expected_tokens,
+                label: None,
+                found: found_string,
+            },
+            span,
+            file: None,
+        }
+    }
+}
+
+impl<'src, 'tokens: 'src, I> LabelError<'src, I, &'src str> for RichError
+where
+    I: ValueInput<'src, Token = Token<'tokens>, Span = Span>,
+{
+    fn expected_found<E>(
+        expected: E,
+        found: Option<MaybeRef<'src, Token<'tokens>>>,
+        span: Span,
+    ) -> Self
+    where
+        E: IntoIterator<Item = &'src str>,
+    {
+        let expected_strings: Vec<String> = expected.into_iter().map(|s| s.to_string()).collect();
+        let found_string = found.map(|t| t.to_string());
+
+        Self {
+            error: Error::Syntax {
+                expected: expected_strings,
+                label: None,
+                found: found_string,
+            },
+            span,
+            file: None,
+        }
+    }
+
+    fn label_with(&mut self, label: &'src str) {
+        if let Error::Syntax {
+            label: ref mut l, ..
+        } = &mut self.error
+        {
+            *l = Some(label.to_string());
+        }
     }
 }
 
@@ -268,6 +407,11 @@ pub enum Error {
     ForWhileWidthPow2(usize),
     CannotParse(String),
     Grammar(String),
+    Syntax {
+        expected: Vec<String>,
+        label: Option<String>,
+        found: Option<String>,
+    },
     IncompatibleMatchArms(MatchPattern, MatchPattern),
     // TODO: Remove CompileError once SimplicityHL has a type system
     // The SimplicityHL compiler should never produce ill-typed Simplicity code
@@ -332,6 +476,21 @@ impl fmt::Display for Error {
                 f,
                 "Grammar error: {description}"
             ),
+            Error::Syntax { expected, label, found } => {
+                let found_text = found.clone().unwrap_or("end of input".to_string());
+                match (label, expected.len()) {
+                    (Some(l), _) => write!(f, "Expected {}, found {}", l, found_text),
+                    (None, 1) => {
+                        let exp_text = expected.first().unwrap();
+                        write!(f, "Expected '{}', found '{}'", exp_text, found_text)
+                    }
+                    (None, 0) => write!(f, "Unexpected {}", found_text),
+                    (None, _) => {
+                        let exp_text = expected.iter().map(|s| format!("'{}'", s)).join(", ");
+                        write!(f, "Expected one of {}, found '{}'", exp_text, found_text)
+                    }
+                }
+            }
             Error::IncompatibleMatchArms(pattern1, pattern2) => write!(
                 f,
                 "Match arm `{pattern1}` is incompatible with arm `{pattern2}`"
