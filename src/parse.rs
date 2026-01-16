@@ -11,7 +11,7 @@ use chumsky::prelude::*;
 use either::Either;
 use miniscript::iter::{Tree, TreeLike};
 
-use crate::error::RichError;
+use crate::error::{Error, ErrorHandler, RichError};
 use crate::error::{Span, Spanned};
 use crate::impl_eq_hash;
 use crate::lexer::Token;
@@ -850,7 +850,7 @@ macro_rules! impl_parse_wrapped_string {
     ($wrapper: ident, $rule: ident) => {
         impl ChumskyParse for $wrapper {
             fn parser<'tokens, 'src: 'tokens, I>(
-            ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+            ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
             where
                 I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
             {
@@ -868,18 +868,24 @@ impl_parse_wrapped_string!(WitnessName, witness_name);
 impl_parse_wrapped_string!(AliasName, alias_name);
 impl_parse_wrapped_string!(ModuleName, module_name);
 
-/// Copy of [`FromStr`] that internally uses the PEST parser.
+/// Copy of [`FromStr`] that internally uses the `chumsky` parser.
 pub trait ParseFromStr: Sized {
     /// Parse a value from the string `s`.
     fn parse_from_str(s: &str) -> Result<Self, RichError>;
 }
 
+/// Trait for parsing with [`error::ErrorHandler`].
+pub trait ParseFromStrWithErrors: Sized {
+    /// Parse a value from the string `s` with Errors.
+    fn parse_from_str_with_errors(s: &str, handler: &mut ErrorHandler) -> Option<Self>;
+}
+
 /// Trait for generating parsers of themselves.
 ///
 /// Replacement for previous `PestParse` trait.
-trait ChumskyParse: Sized {
+pub trait ChumskyParse: Sized {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>;
 }
@@ -904,8 +910,8 @@ impl<A: ChumskyParse + std::fmt::Debug> ParseFromStr for A {
             });
         };
 
-        let (ty, parse_errs) = A::parser()
-            .map_with(|ast, e| (ast, e.span()))
+        let (ast, parse_errs) = A::parser()
+            .map_with(|parsed, _| parsed)
             .parse(
                 tokens
                     .as_slice()
@@ -914,37 +920,109 @@ impl<A: ChumskyParse + std::fmt::Debug> ParseFromStr for A {
             .into_output_errors();
 
         if parse_errs.is_empty() {
-            Ok(ty
-                .ok_or(RichError::new(
-                    crate::error::Error::CannotParse(String::new()),
-                    Span::new(0, 0),
-                ))?
-                .0)
+            Ok(ast.ok_or(RichError::new(
+                crate::error::Error::CannotParse(String::new()),
+                Span::new(0, 0),
+            ))?)
         } else {
-            let err = parse_errs
-                .first()
-                .map(|err| (dbg!(err.reason().to_string()), err.span()))
-                .unwrap();
-            Err(RichError::new(
-                crate::error::Error::CannotParse(err.0),
-                *err.1,
-            ))
+            let err = parse_errs.first().unwrap().clone();
+            Err(err)
+        }
+    }
+}
+
+impl<A: ChumskyParse + std::fmt::Debug> ParseFromStrWithErrors for A {
+    fn parse_from_str_with_errors(s: &str, handler: &mut ErrorHandler) -> Option<Self> {
+        let (tokens, lex_errs) = crate::lexer::lexer().parse(s).into_output_errors();
+        let lex_errs_new = lex_errs
+            .iter()
+            .map(|err| {
+                RichError::new(
+                    crate::error::Error::CannotParse(err.reason().to_string()),
+                    (*err.span()).into(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        handler.update(&lex_errs_new);
+
+        let tokens = if let Some(tok) = tokens {
+            tok.into_iter()
+                .map(|(tok, span)| (tok, Span::from(span)))
+                .filter(|(tok, _)| !matches!(tok, Token::Comment | Token::BlockComment))
+                .collect::<Vec<_>>()
+        } else {
+            return None;
+        };
+
+        let (ast, parse_errs) = A::parser()
+            .map_with(|parsed, _| parsed)
+            .parse(
+                tokens
+                    .as_slice()
+                    .map((s.len()..s.len()).into(), |(t, s)| (t, s)),
+            )
+            .into_output_errors();
+
+        handler.update(&parse_errs);
+
+        // We should not return parsed result if we found errors, because analyzing in `ast` module
+        // is not handling poisoned tree right now
+        if handler.get().is_empty() {
+            ast
+        } else {
+            None
         }
     }
 }
 
 fn parse_token_with_recovery<'tokens, 'src: 'tokens, I>(
     tok: Token<'src>,
-) -> impl Parser<'tokens, I, Token<'src>, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+) -> impl Parser<'tokens, I, Token<'src>, extra::Err<RichError>> + Clone
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
 {
     just(tok.clone()).recover_with(via_parser(empty().to(tok)))
 }
 
+fn delimited_with_recovery<'tokens, 'src: 'tokens, I, P, T>(
+    parser: P,
+    open: Token<'src>,
+    close: Token<'src>,
+    fallback: T,
+) -> impl Parser<'tokens, I, T, extra::Err<RichError>> + Clone + use<'tokens, 'src, I, P, T>
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+    P: Parser<'tokens, I, T, extra::Err<RichError>> + Clone,
+    T: Clone + 'tokens,
+{
+    let open_parser = just(open.clone());
+    open_parser
+        .map_with(|_, e| e.span())
+        .then(parser.recover_with(via_parser(nested_delimiters(
+            open.clone(),
+            close.clone(),
+            [
+                (Token::LParen, Token::RParen),
+                (Token::LBracket, Token::RBracket),
+                (Token::LBrace, Token::RBrace),
+                (Token::LAngle, Token::RAngle),
+            ],
+            move |_| fallback.clone(),
+        ))))
+        .then(just(close).or_not())
+        // TODO: we should use information about open delimiter
+        .validate(move |((open_span, content), close_token), _, emit| {
+            if close_token.is_none() {
+                emit.emit(Error::Grammar(format!("Unclosed delimiter {open}")).with_span(open_span))
+            }
+            content
+        })
+}
+
 impl ChumskyParse for AliasedType {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
@@ -969,26 +1047,6 @@ impl ChumskyParse for AliasedType {
             },
         };
 
-        let angle_recovery = via_parser(nested_delimiters(
-            Token::LAngle,
-            Token::RAngle,
-            [
-                (Token::LParen, Token::RParen),
-                (Token::LBracket, Token::RBracket),
-            ],
-            |_| AliasedType::alias(AliasName::from_str_unchecked("error")),
-        ));
-
-        let bracket_recovery = via_parser(nested_delimiters(
-            Token::LBracket,
-            Token::RBracket,
-            [
-                (Token::LParen, Token::RParen),
-                (Token::LAngle, Token::RAngle),
-            ],
-            |_| AliasedType::alias(AliasName::from_str_unchecked("error")),
-        ));
-
         let num = select! { Token::DecLiteral(i) => i }
             .labelled("decimal number")
             .recover_with(via_parser(
@@ -998,85 +1056,81 @@ impl ChumskyParse for AliasedType {
                     .to("0"),
             ));
 
+        let error_type = AliasedType::alias(AliasName::from_str_unchecked("error"));
+
         recursive(|ty| {
-            let args = ty
-                .clone()
-                .then_ignore(parse_token_with_recovery(Token::Comma))
-                .then(ty.clone())
-                .delimited_by(just(Token::LAngle), just(Token::RAngle));
+            let args = delimited_with_recovery(
+                ty.clone()
+                    .then_ignore(parse_token_with_recovery(Token::Comma))
+                    .then(ty.clone()),
+                Token::LAngle,
+                Token::RAngle,
+                (error_type.clone(), error_type.clone()),
+            );
 
             let sum_type = just(Token::BuiltinType("Either"))
                 .ignore_then(args)
                 .map(|(left, right)| AliasedType::either(left, right))
-                .recover_with(angle_recovery.clone())
                 .labelled("Either");
 
             let option_type = just(Token::BuiltinType("Option"))
-                .ignore_then(
-                    ty.clone()
-                        .delimited_by(just(Token::LAngle), just(Token::RAngle))
-                        .recover_with(angle_recovery),
-                )
+                .ignore_then(delimited_with_recovery(
+                    ty.clone(),
+                    Token::LAngle,
+                    Token::RAngle,
+                    error_type.clone(),
+                ))
                 .map(AliasedType::option)
                 .labelled("Option");
 
-            let tuple = ty
-                .clone()
-                .separated_by(just(Token::Comma))
-                .allow_trailing()
-                .collect()
-                .delimited_by(just(Token::LParen), just(Token::RParen))
-                .recover_with(via_parser(nested_delimiters(
-                    Token::LParen,
-                    Token::RParen,
-                    [
-                        (Token::LBracket, Token::RBracket),
-                        (Token::LAngle, Token::RAngle),
-                    ],
-                    |_| vec![],
-                )))
-                .map(|s: Vec<AliasedType>| AliasedType::tuple(s))
-                .labelled("tuple");
+            let tuple = delimited_with_recovery(
+                ty.clone()
+                    .separated_by(just(Token::Comma))
+                    .allow_trailing()
+                    .collect()
+                    .map(|s: Vec<AliasedType>| AliasedType::tuple(s)),
+                Token::LParen,
+                Token::RParen,
+                AliasedType::tuple(Vec::new()),
+            )
+            .labelled("tuple");
 
-            let array = ty
-                .clone()
-                .then_ignore(parse_token_with_recovery(Token::Semi))
-                .then(num.clone())
-                .delimited_by(just(Token::LBracket), just(Token::RBracket))
-                .map(|(ty, size)| AliasedType::array(ty, usize::from_str(size).unwrap_or_default()))
-                .recover_with(bracket_recovery)
-                .labelled("array");
-
-            let other_angle_recovery = via_parser(
-                any()
-                    .filter(|t| !matches!(t, Token::RAngle | Token::RParen | Token::RBracket))
-                    .repeated()
-                    .ignore_then(just(Token::RAngle).or_not())
-                    .to((
-                        AliasedType::alias(AliasName::from_str_unchecked("error")),
-                        NonZeroPow2Usize::TWO,
-                    )),
-            );
+            let array = delimited_with_recovery(
+                ty.clone()
+                    .then_ignore(parse_token_with_recovery(Token::Semi))
+                    .then(num.clone())
+                    .map(|(ty, size)| {
+                        AliasedType::array(ty, usize::from_str(size).unwrap_or_default())
+                    }),
+                Token::LBracket,
+                Token::RBracket,
+                AliasedType::array(error_type.clone(), 0),
+            )
+            .labelled("array");
 
             let list = just(Token::BuiltinType("List"))
-                .ignore_then(
+                .ignore_then(delimited_with_recovery(
                     ty.then_ignore(parse_token_with_recovery(Token::Comma))
                         .then(num.clone().validate(|num, e, emit| {
                             match NonZeroPow2Usize::from_str(num) {
                                 Ok(number) => number,
                                 Err(err) => {
-                                    emit.emit(Rich::custom(
-                                        e.span(),
-                                        format!("Failed to parse List size: {}", err),
-                                    ));
+                                    emit.emit(
+                                        Error::Grammar(format!("Cannot parse list bound: {err}"))
+                                            .with_span(e.span()),
+                                    );
                                     // fallback to default value
                                     NonZeroPow2Usize::TWO
                                 }
                             }
-                        }))
-                        .delimited_by(just(Token::LAngle), just(Token::RAngle))
-                        .recover_with(other_angle_recovery),
-                )
+                        })),
+                    Token::LAngle,
+                    Token::RAngle,
+                    (
+                        AliasedType::alias(AliasName::from_str_unchecked("error")),
+                        NonZeroPow2Usize::TWO,
+                    ),
+                ))
                 .map(|(ty, size)| AliasedType::list(ty, size))
                 .labelled("List");
 
@@ -1089,7 +1143,7 @@ impl ChumskyParse for AliasedType {
 
 impl ChumskyParse for Program {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
@@ -1105,7 +1159,7 @@ impl ChumskyParse for Program {
 
 impl ChumskyParse for Item {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
@@ -1119,31 +1173,31 @@ impl ChumskyParse for Item {
 
 impl ChumskyParse for Function {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
-        let params = FunctionParam::parser()
-            .separated_by(just(Token::Comma))
-            .allow_trailing()
-            .collect::<Vec<_>>()
-            .delimited_by(just(Token::LParen), just(Token::RParen))
-            .recover_with(via_parser(nested_delimiters(
-                Token::LParen,
-                Token::RParen,
-                [
-                    (Token::LBracket, Token::RBracket),
-                    (Token::LAngle, Token::RAngle),
-                ],
-                |_| Vec::new(),
-            )))
-            .map(Arc::from);
+        let params = delimited_with_recovery(
+            FunctionParam::parser()
+                .separated_by(just(Token::Comma))
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+            Token::LParen,
+            Token::RParen,
+            Vec::new(),
+        )
+        .map(Arc::from)
+        .labelled("function parameters");
 
         let ret = just(Token::Arrow)
             .ignore_then(AliasedType::parser())
-            .or_not();
+            .or_not()
+            .labelled("return type");
 
-        let body = Expression::parser();
+        let body = just(Token::LBrace)
+            .rewind()
+            .ignore_then(Expression::parser())
+            .labelled("function body");
 
         just(Token::Fn)
             .ignore_then(FunctionName::parser().map_with(|name, e| (name, e.span())))
@@ -1162,7 +1216,7 @@ impl ChumskyParse for Function {
 
 impl ChumskyParse for FunctionParam {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
@@ -1183,12 +1237,10 @@ impl ChumskyParse for FunctionParam {
 impl Statement {
     fn parser<'tokens, 'src: 'tokens, I, E>(
         expr: E,
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone + use<'tokens, 'src, I, E>
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
-        E: Parser<'tokens, I, Expression, extra::Err<Rich<'tokens, Token<'src>, Span>>>
-            + Clone
-            + 'tokens,
+        E: Parser<'tokens, I, Expression, extra::Err<RichError>> + Clone + 'tokens,
     {
         let assignment = Assignment::parser(expr.clone()).map(Statement::Assignment);
 
@@ -1200,12 +1252,10 @@ impl Statement {
 impl Assignment {
     fn parser<'tokens, 'src: 'tokens, I, E>(
         expr: E,
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone + use<'tokens, 'src, I, E>
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
-        E: Parser<'tokens, I, Expression, extra::Err<Rich<'tokens, Token<'src>, Span>>>
-            + Clone
-            + 'tokens,
+        E: Parser<'tokens, I, Expression, extra::Err<RichError>> + Clone + 'tokens,
     {
         just(Token::Let)
             .ignore_then(Pattern::parser())
@@ -1224,13 +1274,12 @@ impl Assignment {
 
 impl ChumskyParse for Pattern {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
         recursive(|pat| {
-            let variable = select! { Token::Ident(name) => Identifier::from_str_unchecked(name) }
-                .map(Pattern::Identifier);
+            let variable = Identifier::parser().map(Pattern::Identifier);
 
             let ignore = select! {
                 Token::Ident("_") => Pattern::Ignore,
@@ -1272,12 +1321,10 @@ impl ChumskyParse for Pattern {
 impl Call {
     pub fn parser<'tokens, 'src: 'tokens, I, E>(
         expr: E,
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone + use<'tokens, 'src, I, E>
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
-        E: Parser<'tokens, I, Expression, extra::Err<Rich<'tokens, Token<'src>, Span>>>
-            + Clone
-            + 'tokens,
+        E: Parser<'tokens, I, Expression, extra::Err<RichError>> + Clone + 'tokens,
     {
         let args = expr
             .separated_by(just(Token::Comma))
@@ -1305,7 +1352,7 @@ impl Call {
 
 impl ChumskyParse for CallName {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
@@ -1341,10 +1388,25 @@ impl ChumskyParse for CallName {
             .then_ignore(just(Token::Comma))
             .then(select! { Token::DecLiteral(s) => s })
             .then_ignore(generics_close.clone())
-            .try_map(|(func, bound_str), span| {
-                let bound = NonZeroPow2Usize::from_str(bound_str)
-                    .map_err(|e| Rich::custom(span, format!("Invalid fold bound: {}", e)))?;
-                Ok(CallName::Fold(func, bound))
+            .validate(|(func, bound_str), e, emit| {
+                let bound = match bound_str.parse::<usize>() {
+                    Ok(num) => match NonZeroPow2Usize::new(num) {
+                        Some(val) => val,
+                        None => {
+                            emit.emit(Error::ListBoundPow2(num).with_span(e.span()));
+                            NonZeroPow2Usize::TWO
+                        }
+                    },
+                    Err(_) => {
+                        emit.emit(
+                            Error::CannotParse(format!("Invalid number: {}", bound_str))
+                                .with_span(e.span()),
+                        );
+                        NonZeroPow2Usize::TWO
+                    }
+                };
+
+                CallName::Fold(func, bound)
             });
 
         let array_fold = just(Token::BuiltinFn("array_fold"))
@@ -1353,13 +1415,23 @@ impl ChumskyParse for CallName {
             .then_ignore(just(Token::Comma))
             .then(select! { Token::DecLiteral(s) => s })
             .then_ignore(generics_close.clone())
-            .try_map(|(func, size_str), span| {
-                let size_val = size_str
-                    .parse::<usize>()
-                    .map_err(|_| Rich::custom(span, "Invalid number"))?;
-                let size = NonZeroUsize::new(size_val)
-                    .ok_or_else(|| Rich::custom(span, "Array fold size must be non-zero"))?;
-                Ok(CallName::ArrayFold(func, size))
+            .validate(|(func, size_str), e, emit| {
+                let size = match size_str.parse::<usize>() {
+                    Ok(0) => {
+                        emit.emit(Error::ArraySizeNonZero(0).with_span(e.span()));
+                        NonZeroUsize::new(1).unwrap()
+                    }
+                    Ok(n) => NonZeroUsize::new(n).unwrap(),
+                    Err(_) => {
+                        emit.emit(
+                            Error::CannotParse(format!("Invalid number: {}", size_str))
+                                .with_span(e.span()),
+                        );
+                        NonZeroUsize::new(1).unwrap()
+                    }
+                };
+
+                CallName::ArrayFold(func, size)
             });
 
         let for_while = just(Token::BuiltinFn("for_while"))
@@ -1396,7 +1468,7 @@ impl ChumskyParse for CallName {
 
 impl ChumskyParse for TypeAlias {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
@@ -1416,7 +1488,7 @@ impl ChumskyParse for TypeAlias {
 }
 impl ChumskyParse for Expression {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
@@ -1467,12 +1539,10 @@ impl ChumskyParse for Expression {
 impl SingleExpression {
     pub fn parser<'tokens, 'src: 'tokens, I, E>(
         expr: E,
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone + use<'tokens, 'src, I, E>
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
-        E: Parser<'tokens, I, Expression, extra::Err<Rich<'tokens, Token<'src>, Span>>>
-            + Clone
-            + 'tokens,
+        E: Parser<'tokens, I, Expression, extra::Err<RichError>> + Clone + 'tokens,
     {
         let wrapper = |name: &'static str| {
             select! { Token::Ident(i) if i == name => i }.ignore_then(
@@ -1546,29 +1616,23 @@ impl SingleExpression {
 
 impl ChumskyParse for MatchPattern {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
         let wrapper = |name: &'static str, ctor: fn(Identifier, AliasedType) -> Self| {
             select! { Token::Ident(i) if i == name => i }
-                .ignore_then(
+                .ignore_then(delimited_with_recovery(
                     Identifier::parser()
                         .then_ignore(just(Token::Colon))
-                        .then(AliasedType::parser())
-                        .delimited_by(just(Token::LParen), just(Token::RParen))
-                        .recover_with(via_parser(nested_delimiters(
-                            Token::LParen,
-                            Token::RParen,
-                            [(Token::LBracket, Token::RBracket)],
-                            |_| {
-                                (
-                                    Identifier::from_str_unchecked(""),
-                                    AliasedType::alias(AliasName::from_str_unchecked("error")),
-                                )
-                            },
-                        ))),
-                )
+                        .then(AliasedType::parser()),
+                    Token::LParen,
+                    Token::RParen,
+                    (
+                        Identifier::from_str_unchecked(""),
+                        AliasedType::alias(AliasName::from_str_unchecked("error")),
+                    ),
+                ))
                 .map(move |(id, ty)| ctor(id, ty))
         };
 
@@ -1586,22 +1650,23 @@ impl ChumskyParse for MatchPattern {
 impl MatchArm {
     pub fn parser<'tokens, 'src: 'tokens, I, E>(
         expr: E,
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone + use<'tokens, 'src, I, E>
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
-        E: Parser<'tokens, I, Expression, extra::Err<Rich<'tokens, Token<'src>, Span>>>
-            + Clone
-            + 'tokens,
+        E: Parser<'tokens, I, Expression, extra::Err<RichError>> + Clone + 'tokens,
     {
         MatchPattern::parser()
             .then_ignore(just(Token::FatArrow))
             .then(expr.map(Arc::new))
             .then(just(Token::Comma).or_not())
-            .validate(|((pattern, expression), comma), e, emit| {
+            .validate(|((pattern, expression), comma), e, emitter| {
                 let is_block = matches!(expression.as_ref().inner, ExpressionInner::Block(_, _));
 
                 if !is_block && comma.is_none() {
-                    emit.emit(Rich::custom(e.span(), "Missing comma after match arm"));
+                    emitter.emit(
+                        Error::Grammar("Missing ',' after match arm".to_string())
+                            .with_span(e.span()),
+                    );
                 }
 
                 Self {
@@ -1615,12 +1680,10 @@ impl MatchArm {
 impl Match {
     pub fn parser<'tokens, 'src: 'tokens, I, E>(
         expr: E,
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone + use<'tokens, 'src, I, E>
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
-        E: Parser<'tokens, I, Expression, extra::Err<Rich<'tokens, Token<'src>, Span>>>
-            + Clone
-            + 'tokens,
+        E: Parser<'tokens, I, Expression, extra::Err<RichError>> + Clone + 'tokens,
     {
         let scrutinee = expr.clone().map(Arc::new);
 
@@ -1631,8 +1694,7 @@ impl Match {
         just(Token::Match)
             .ignore_then(scrutinee)
             .then(arms)
-            .map_with(|(scrutinee, (first, second)), e| (scrutinee, first, second, e.span()))
-            .try_map(|(scrutinee, first, second, span), _| {
+            .validate(|(scrutinee, (first, second)), e, emit| {
                 let (left, right) = match (&first.pattern, &second.pattern) {
                     (MatchPattern::Left(..), MatchPattern::Right(..)) => (first, second),
                     (MatchPattern::Right(..), MatchPattern::Left(..)) => (second, first),
@@ -1644,26 +1706,27 @@ impl Match {
                     (MatchPattern::True, MatchPattern::False) => (second, first),
 
                     (p1, p2) => {
-                        return Err(Rich::custom(
-                            span,
-                            format!("Incompatible match arms: {:?} and {:?}", p1, p2),
-                        ));
+                        emit.emit(
+                            Error::IncompatibleMatchArms(p1.clone(), p2.clone())
+                                .with_span(e.span()),
+                        );
+                        (first, second)
                     }
                 };
 
-                Ok(Self {
+                Self {
                     scrutinee,
                     left,
                     right,
-                    span,
-                })
+                    span: e.span(),
+                }
             })
     }
 }
 
 impl ChumskyParse for ModuleItem {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
@@ -1675,7 +1738,7 @@ impl ChumskyParse for ModuleItem {
 
 impl ChumskyParse for ModuleProgram {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
@@ -1691,7 +1754,7 @@ impl ChumskyParse for ModuleProgram {
 
 impl ChumskyParse for Module {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
@@ -1725,7 +1788,7 @@ impl ChumskyParse for Module {
 
 impl ChumskyParse for ModuleAssignment {
     fn parser<'tokens, 'src: 'tokens, I>(
-    ) -> impl Parser<'tokens, I, Self, extra::Err<Rich<'tokens, Token<'src>, Span>>> + Clone
+    ) -> impl Parser<'tokens, I, Self, extra::Err<RichError>> + Clone
     where
         I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
     {
@@ -2076,9 +2139,7 @@ mod tests {
             .filter(|(tok, _)| !matches!(tok, Token::Comment | Token::BlockComment))
             .collect::<Vec<_>>();
 
-        dbg!(&tokens);
-
-        let (program, errors) = Program::parser()
+        let (_, errors) = Program::parser()
             .map_with(|ast, e| (ast, e.span()))
             .parse(
                 tokens
@@ -2087,11 +2148,7 @@ mod tests {
             )
             .into_output_errors();
 
-        dbg!(&program);
-        dbg!(errors);
-
-        println!("{}", program.unwrap().0);
-
         assert!(lex_errs.is_empty());
+        assert!(errors.is_empty());
     }
 }
