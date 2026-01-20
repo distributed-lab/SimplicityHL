@@ -29,8 +29,8 @@ pub extern crate simplicity;
 pub use simplicity::elements;
 
 use crate::debug::DebugSymbols;
-use crate::error::WithFile;
-use crate::parse::ParseFromStr;
+use crate::error::{ErrorCollector, WithFile};
+use crate::parse::ParseFromStrWithErrors;
 pub use crate::types::ResolvedType;
 pub use crate::value::Value;
 pub use crate::witness::{Arguments, Parameters, WitnessTypes, WitnessValues};
@@ -52,12 +52,17 @@ impl TemplateProgram {
     /// The string is not a valid SimplicityHL program.
     pub fn new<Str: Into<Arc<str>>>(s: Str) -> Result<Self, String> {
         let file = s.into();
-        let parse_program = parse::Program::parse_from_str(&file)?;
-        let ast_program = ast::Program::analyze(&parse_program).with_file(Arc::clone(&file))?;
-        Ok(Self {
-            simfony: ast_program,
-            file,
-        })
+        let mut error_handler = ErrorCollector::new(file.clone());
+        let parse_program = parse::Program::parse_from_str_with_errors(&file, &mut error_handler);
+        if let Some(program) = parse_program {
+            let ast_program = ast::Program::analyze(&program).with_file(Arc::clone(&file))?;
+            Ok(Self {
+                simfony: ast_program,
+                file,
+            })
+        } else {
+            Err(error_handler)?
+        }
     }
 
     /// Access the parameters of the program.
@@ -265,6 +270,7 @@ pub trait ArbitraryOfType: Sized {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::parse::ParseFromStr;
     use base64::display::Base64Display;
     use base64::engine::general_purpose::STANDARD;
     use simplicity::BitMachine;
