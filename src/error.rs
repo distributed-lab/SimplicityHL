@@ -1,155 +1,112 @@
 use std::fmt;
-use std::num::NonZeroUsize;
+use std::ops::Range;
 use std::sync::Arc;
 
+use chumsky::error::Error as ChumskyError;
+use chumsky::input::ValueInput;
+use chumsky::label::LabelError;
+use chumsky::util::MaybeRef;
+use chumsky::DefaultExpected;
+
+use itertools::Itertools;
+use line_index::{LineCol, LineIndex, TextSize};
 use simplicity::hashes::{sha256, Hash, HashEngine};
 use simplicity::{elements, Cmr};
 
-use crate::parse::{MatchPattern, Rule};
+use crate::lexer::Token;
+use crate::parse::MatchPattern;
 use crate::str::{AliasName, FunctionName, Identifier, JetName, ModuleName, WitnessName};
 use crate::types::{ResolvedType, UIntType};
-
-/// Position of an object inside a file.
-///
-/// [`pest::Position<'i>`] forces us to track lifetimes, so we introduce our own struct.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Position {
-    /// Line where the object is located.
-    ///
-    /// Starts at 1.
-    pub line: NonZeroUsize,
-    /// Column where the object is located.
-    ///
-    /// Starts at 1.
-    pub col: NonZeroUsize,
-}
-
-impl Position {
-    /// A dummy position.
-    #[cfg(feature = "arbitrary")]
-    pub(crate) const DUMMY: Self = Self::new(1, 1);
-
-    /// Create a new position.
-    ///
-    /// ## Panics
-    ///
-    /// Line or column are zero.
-    pub const fn new(line: usize, col: usize) -> Self {
-        // assert_ne not available in constfn
-        assert!(line != 0, "line must not be zero",);
-        // Safety: Checked above
-        let line = unsafe { NonZeroUsize::new_unchecked(line) };
-        assert!(col != 0, "column must not be zero",);
-        // Safety: Checked above
-        let col = unsafe { NonZeroUsize::new_unchecked(col) };
-        Self { line, col }
-    }
-}
 
 /// Area that an object spans inside a file.
 ///
 /// The area cannot be empty.
-///
-/// [`pest::Span<'i>`] forces us to track lifetimes, so we introduce our own struct.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Span {
     /// Position where the object starts, inclusively.
-    pub start: Position,
-    /// Position where the object ends, inclusively.
-    pub end: Position,
+    pub start: usize,
+    /// Position where the object ends, exclusively.
+    pub end: usize,
 }
 
 impl Span {
     /// A dummy span.
     #[cfg(feature = "arbitrary")]
-    pub(crate) const DUMMY: Self = Self::new(Position::DUMMY, Position::DUMMY);
+    pub(crate) const DUMMY: Self = Self::new(0, 0);
 
     /// Create a new span.
     ///
     /// ## Panics
     ///
     /// Start comes after end.
-    pub const fn new(start: Position, end: Position) -> Self {
-        // NonZeroUsize does not implement const comparisons (yet)
-        // So we call NonZeroUsize:get() to compare usize in const
-        assert!(
-            start.line.get() <= end.line.get(),
-            "Start cannot come after end"
-        );
-        assert!(
-            start.line.get() < end.line.get() || start.col.get() <= end.col.get(),
-            "Start cannot come after end"
-        );
+    pub const fn new(start: usize, end: usize) -> Self {
+        assert!(start <= end, "Start cannot come after end");
         Self { start, end }
-    }
-
-    /// Check if the span covers more than one line.
-    pub const fn is_multiline(&self) -> bool {
-        self.start.line.get() < self.end.line.get()
     }
 
     /// Return the CMR of the span.
     pub fn cmr(&self) -> Cmr {
         let mut hasher = sha256::HashEngine::default();
-        hasher.input(&self.start.line.get().to_be_bytes());
-        hasher.input(&self.start.col.get().to_be_bytes());
-        hasher.input(&self.end.line.get().to_be_bytes());
-        hasher.input(&self.end.col.get().to_be_bytes());
+        hasher.input(&self.start.to_be_bytes());
+        hasher.input(&self.end.to_be_bytes());
         let hash = sha256::Hash::from_engine(hasher);
         Cmr::from_byte_array(hash.to_byte_array())
     }
 
     /// Return a slice from the given `file` that corresponds to the span.
-    ///
-    /// Return `None` if the span runs out of bounds.
     pub fn to_slice<'a>(&self, file: &'a str) -> Option<&'a str> {
-        let mut current_line = 1;
-        let mut current_col = 1;
-        let mut start_index = None;
-
-        for (i, c) in file.char_indices() {
-            if current_line == self.start.line.get() && current_col == self.start.col.get() {
-                start_index = Some(i);
-            }
-            if current_line == self.end.line.get() && current_col == self.end.col.get() {
-                let start_index = start_index.expect("start comes before end");
-                let end_index = i;
-                return Some(&file[start_index..end_index]);
-            }
-            if c == '\n' {
-                current_line += 1;
-                current_col = 1;
-            } else {
-                current_col += 1;
-            }
-        }
-
-        None
+        file.get(self.start..self.end)
     }
 }
 
-impl<'a> From<&'a pest::iterators::Pair<'_, Rule>> for Span {
-    fn from(pair: &'a pest::iterators::Pair<Rule>) -> Self {
-        let (line, col) = pair.line_col();
-        let start = Position::new(line, col);
-        // end_pos().line_col() is O(n) in file length
-        // https://github.com/pest-parser/pest/issues/560
-        // We should generate `Span`s only on error paths
-        let (line, col) = pair.as_span().end_pos().line_col();
-        let end = Position::new(line, col);
-        Self::new(start, end)
+impl chumsky::span::Span for Span {
+    type Context = ();
+
+    type Offset = usize;
+
+    fn new((): Self::Context, range: Range<Self::Offset>) -> Self {
+        Self {
+            start: range.start,
+            end: range.end,
+        }
+    }
+
+    fn context(&self) -> Self::Context {}
+
+    fn start(&self) -> Self::Offset {
+        self.start
+    }
+
+    fn end(&self) -> Self::Offset {
+        self.end
+    }
+}
+
+impl fmt::Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}..{}", self.start, self.end)?;
+        Ok(())
+    }
+}
+
+impl From<chumsky::span::SimpleSpan> for Span {
+    fn from(span: chumsky::span::SimpleSpan) -> Self {
+        Self {
+            start: span.start,
+            end: span.end,
+        }
+    }
+}
+
+impl From<Range<usize>> for Span {
+    fn from(range: Range<usize>) -> Self {
+        Self::new(range.start, range.end)
     }
 }
 
 impl From<&str> for Span {
     fn from(s: &str) -> Self {
-        let start = Position::new(1, 1);
-        let end_line = std::cmp::max(1, s.lines().count());
-        let end_col = std::cmp::max(1, s.lines().next_back().unwrap_or("").len());
-        let end = Position::new(end_line, end_col);
-        debug_assert!(start.line <= end.line);
-        debug_assert!(start.line < end.line || start.col <= end.col);
-        Span::new(start, end)
+        Span::new(0, s.len())
     }
 }
 
@@ -235,9 +192,17 @@ impl fmt::Display for RichError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.file {
             Some(ref file) if !file.is_empty() => {
-                let start_line_index = self.span.start.line.get() - 1;
-                let n_spanned_lines = self.span.end.line.get() - start_line_index;
-                let line_num_width = self.span.end.line.get().to_string().len();
+                let index = LineIndex::new(file);
+
+                let start_pos = index.line_col(TextSize::from(self.span.start as u32));
+                let end_pos = index.line_col(TextSize::from(self.span.end as u32));
+
+                let start_line_index = start_pos.line as usize;
+                let end_line_index = end_pos.line as usize;
+
+                let n_spanned_lines = end_line_index.saturating_sub(start_line_index) + 1;
+                let line_num_width = (end_line_index + 1).to_string().len();
+
                 writeln!(f, "{:width$} |", " ", width = line_num_width)?;
 
                 let mut lines = file.lines().skip(start_line_index).peekable();
@@ -248,21 +213,28 @@ impl fmt::Display for RichError {
                     writeln!(f, "{line_num:line_num_width$} | {line_str}")?;
                 }
 
-                let (underline_start, underline_length) = match self.span.is_multiline() {
-                    true => (0, start_line_len),
-                    false => (
-                        self.span.start.col.get(),
-                        self.span.end.col.get() - self.span.start.col.get(),
-                    ),
+                let line_start_byte = index
+                    .offset(LineCol {
+                        line: start_pos.line,
+                        col: 0,
+                    })
+                    .map_or(0, |ts| u32::from(ts) as usize);
+
+                let start_col = file[line_start_byte..self.span.start].chars().count() + 1;
+
+                let (underline_start, underline_length) = if start_line_index == end_line_index {
+                    let end_col = file[line_start_byte..self.span.end].chars().count() + 1;
+                    (start_col, end_col.saturating_sub(start_col))
+                } else {
+                    (0, start_line_len)
                 };
+
                 write!(f, "{:width$} |", " ", width = line_num_width)?;
                 write!(f, "{:width$}", " ", width = underline_start)?;
                 write!(f, "{:^<width$} ", "", width = underline_length)?;
                 write!(f, "{}", self.error)
             }
-            _ => {
-                write!(f, "{}", self.error)
-            }
+            _ => write!(f, "{}", self.error),
         }
     }
 }
@@ -281,19 +253,92 @@ impl From<RichError> for String {
     }
 }
 
-impl From<pest::error::Error<Rule>> for RichError {
-    fn from(error: pest::error::Error<Rule>) -> Self {
-        let description = error.variant.message().to_string();
-        let (start, end) = match error.line_col {
-            pest::error::LineColLocation::Pos((line, col)) => {
-                (Position::new(line, col), Position::new(line, col + 1))
-            }
-            pest::error::LineColLocation::Span((line, col), (line_end, col_end)) => {
-                (Position::new(line, col), Position::new(line_end, col_end))
-            }
-        };
-        let span = Span::new(start, end);
-        Self::new(Error::Grammar(description), span)
+/// Implementation of traits for using inside `chumsky` parsers.
+impl<'tokens, 'src: 'tokens, I> ChumskyError<'tokens, I> for RichError
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+{
+    fn merge(self, other: Self) -> Self {
+        match (&self.error, &other.error) {
+            (Error::Grammar(_), Error::Grammar(_)) => other,
+            (Error::Grammar(_), _) => other,
+            (_, Error::Grammar(_)) => self,
+            _ => other,
+        }
+    }
+}
+
+impl<'tokens, 'src: 'tokens, I> LabelError<'tokens, I, DefaultExpected<'tokens, Token<'src>>>
+    for RichError
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+{
+    fn expected_found<E>(
+        expected: E,
+        found: Option<MaybeRef<'tokens, Token<'src>>>,
+        span: Span,
+    ) -> Self
+    where
+        E: IntoIterator<Item = DefaultExpected<'tokens, Token<'src>>>,
+    {
+        let expected_tokens: Vec<String> = expected
+            .into_iter()
+            .map(|t| match t {
+                DefaultExpected::Token(maybe) => maybe.to_string(),
+                DefaultExpected::Any => "anything".to_string(),
+                DefaultExpected::SomethingElse => "something else".to_string(),
+                DefaultExpected::EndOfInput => "end of input".to_string(),
+                _ => String::new(),
+            })
+            .collect();
+
+        let found_string = found.map(|t| t.to_string());
+
+        Self {
+            error: Error::Syntax {
+                expected: expected_tokens,
+                label: None,
+                found: found_string,
+            },
+            span,
+            file: None,
+        }
+    }
+}
+
+impl<'tokens, 'src: 'tokens, I> LabelError<'tokens, I, &'tokens str> for RichError
+where
+    I: ValueInput<'tokens, Token = Token<'src>, Span = Span>,
+{
+    fn expected_found<E>(
+        expected: E,
+        found: Option<MaybeRef<'tokens, Token<'src>>>,
+        span: Span,
+    ) -> Self
+    where
+        E: IntoIterator<Item = &'tokens str>,
+    {
+        let expected_strings: Vec<String> = expected.into_iter().map(|s| s.to_string()).collect();
+        let found_string = found.map(|t| t.to_string());
+
+        Self {
+            error: Error::Syntax {
+                expected: expected_strings,
+                label: None,
+                found: found_string,
+            },
+            span,
+            file: None,
+        }
+    }
+
+    fn label_with(&mut self, label: &'tokens str) {
+        if let Error::Syntax {
+            label: ref mut l, ..
+        } = &mut self.error
+        {
+            *l = Some(label.to_string());
+        }
     }
 }
 
@@ -309,6 +354,11 @@ pub enum Error {
     ForWhileWidthPow2(usize),
     CannotParse(String),
     Grammar(String),
+    Syntax {
+        expected: Vec<String>,
+        label: Option<String>,
+        found: Option<String>,
+    },
     IncompatibleMatchArms(MatchPattern, MatchPattern),
     // TODO: Remove CompileError once SimplicityHL has a type system
     // The SimplicityHL compiler should never produce ill-typed Simplicity code
@@ -373,6 +423,21 @@ impl fmt::Display for Error {
                 f,
                 "Grammar error: {description}"
             ),
+            Error::Syntax { expected, label, found } => {
+                let found_text = found.clone().unwrap_or("end of input".to_string());
+                match (label, expected.len()) {
+                    (Some(l), _) => write!(f, "Expected {}, found {}", l, found_text),
+                    (None, 1) => {
+                        let exp_text = expected.first().unwrap();
+                        write!(f, "Expected '{}', found '{}'", exp_text, found_text)
+                    }
+                    (None, 0) => write!(f, "Unexpected {}", found_text),
+                    (None, _) => {
+                        let exp_text = expected.iter().map(|s| format!("'{}'", s)).join(", ");
+                        write!(f, "Expected one of {}, found '{}'", exp_text, found_text)
+                    }
+                }
+            }
             Error::IncompatibleMatchArms(pattern1, pattern2) => write!(
                 f,
                 "Match arm `{pattern1}` is incompatible with arm `{pattern2}`"
@@ -531,7 +596,7 @@ let x: u32 = Left(
     #[test]
     fn display_single_line() {
         let error = Error::ListBoundPow2(5)
-            .with_span(Span::new(Position::new(1, 14), Position::new(1, 20)))
+            .with_span(Span::new(13, 19))
             .with_file(Arc::from(FILE));
         let expected = r#"
   |
@@ -545,7 +610,7 @@ let x: u32 = Left(
         let error = Error::CannotParse(
             "Expected value of type `u32`, got `Either<Either<_, u32>, _>`".to_string(),
         )
-        .with_span(Span::new(Position::new(2, 21), Position::new(4, 2)))
+        .with_span(Span::new(41, FILE.len()))
         .with_file(Arc::from(FILE));
         let expected = r#"
   |
@@ -578,8 +643,8 @@ let x: u32 = Left(
         let expected = "Cannot parse: This error has no file";
         assert_eq!(&expected, &error.to_string());
 
-        let error = Error::CannotParse("This error has no file".to_string())
-            .with_span(Span::new(Position::new(1, 1), Position::new(2, 2)));
+        let error =
+            Error::CannotParse("This error has no file".to_string()).with_span(Span::new(5, 10));
         assert_eq!(&expected, &error.to_string());
     }
 
@@ -589,11 +654,6 @@ let x: u32 = Left(
             .with_span(Span::from(EMPTY_FILE))
             .with_file(Arc::from(EMPTY_FILE));
         let expected = "Cannot parse: This error has an empty file";
-        assert_eq!(&expected, &error.to_string());
-
-        let error = Error::CannotParse("This error has an empty file".to_string())
-            .with_span(Span::new(Position::new(1, 1), Position::new(2, 2)))
-            .with_file(Arc::from(EMPTY_FILE));
         assert_eq!(&expected, &error.to_string());
     }
 }
