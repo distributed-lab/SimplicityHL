@@ -524,4 +524,52 @@ mod tests {
             Some("Some((Right(0x6d521c38ec1ea15734ae22b7c46064412829c0d0579f0a713d1c04ede979026f), Right(1000)))")
         );
     }
+    const TEST_ARITHMETIC_JETS: &str = r#"
+        fn main() {
+
+            let x: u32 = 5;
+            let y: u32 = 4;
+
+            let sum: (bool, u32) = jet::add_32(x, y);
+            let prod: u64 = jet::multiply_32(x, y);
+
+            assert!(jet::eq_64(prod, 20));
+        }
+    "#;
+
+    #[test]
+    fn test_arith_jet_trace_regression() {
+        let env = create_test_env();
+
+        let program = TemplateProgram::new(TEST_ARITHMETIC_JETS).unwrap();
+        let program = program.instantiate(Arguments::default(), true).unwrap();
+        let satisfied = program.satisfy(WitnessValues::default()).unwrap();
+
+        let (mut tracker, _, jet_store) = create_test_tracker(&satisfied.debug_symbols);
+
+        let _ = satisfied.redeem().prune_with_tracker(&env, &mut tracker);
+
+        let jets = jet_store.borrow();
+
+        assert_eq!(
+            jets.get("add_32").unwrap().0,
+            Some(vec!["5".to_string(), "4".to_string()])
+        );
+        assert_eq!(
+            jets.get("add_32").unwrap().1,
+            Some("(false, 9)".to_string())
+        );
+
+        assert_eq!(
+            jets.get("multiply_32").unwrap().0,
+            Some(vec!["5".to_string(), "4".to_string()])
+        );
+        assert_eq!(jets.get("multiply_32").unwrap().1, Some("20".to_string()));
+
+        assert_eq!(
+            jets.get("eq_64").unwrap().0,
+            Some(vec!["20".to_string(), "20".to_string()])
+        );
+        assert_eq!(jets.get("eq_64").unwrap().1, Some("true".to_string()));
+    }
 }
