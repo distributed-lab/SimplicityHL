@@ -220,19 +220,19 @@ impl<'a> DefaultTracker<'a> {
         match output.clone() {
             NodeOutput::Success(mut output_frame) => {
                 let target_ty = &node.arrow().target;
+                let jet_target_ty = resolve_jet_type(&target_type(jet));
 
                 // Skip the leading bit when the frame has extra padding.
-                // This occurs because jets are wrapped in AssertL (a Case combinator),
-                // which adds structure to the output frame for some jets.
-                if output_frame.len() > target_ty.bit_width() {
+                // This occurs because some jets (like eq_64 etc.) are wrapped in AssertL (a Case combinator),
+                // see compile::with_debug_symbol
+                if target_ty.as_sum().is_some() {
                     let _ = output_frame.next();
                 }
 
                 let output_value = SimValue::from_padded_bits(&mut output_frame, target_ty)
                     .expect("output from bit machine is always well-formed");
 
-                let target_ty = resolve_jet_type(&target_type(jet));
-                Value::reconstruct(&StructuralValue::from(output_value), &target_ty)
+                Value::reconstruct(&StructuralValue::from(output_value), &jet_target_ty)
             }
             _ => None,
         }
