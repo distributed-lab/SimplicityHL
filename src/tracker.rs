@@ -220,19 +220,19 @@ impl<'a> DefaultTracker<'a> {
         match output.clone() {
             NodeOutput::Success(mut output_frame) => {
                 let target_ty = &node.arrow().target;
+                let jet_target_ty = resolve_jet_type(&target_type(jet));
 
                 // Skip the leading bit when the frame has extra padding.
-                // This occurs because jets are wrapped in AssertL (a Case combinator),
-                // which adds structure to the output frame for some jets.
-                if output_frame.len() > target_ty.bit_width() {
+                // This occurs because some jets (like eq_64 etc.) are wrapped in AssertL (a Case combinator),
+                // see compile::with_debug_symbol
+                if target_ty.as_sum().is_some() {
                     let _ = output_frame.next();
                 }
 
                 let output_value = SimValue::from_padded_bits(&mut output_frame, target_ty)
                     .expect("output from bit machine is always well-formed");
 
-                let target_ty = resolve_jet_type(&target_type(jet));
-                Value::reconstruct(&StructuralValue::from(output_value), &target_ty)
+                Value::reconstruct(&StructuralValue::from(output_value), &jet_target_ty)
             }
             _ => None,
         }
@@ -523,5 +523,53 @@ mod tests {
             jets.get("input_amount").unwrap().1.as_deref(),
             Some("Some((Right(0x6d521c38ec1ea15734ae22b7c46064412829c0d0579f0a713d1c04ede979026f), Right(1000)))")
         );
+    }
+    const TEST_ARITHMETIC_JETS: &str = r#"
+        fn main() {
+
+            let x: u32 = 5;
+            let y: u32 = 4;
+
+            let sum: (bool, u32) = jet::add_32(x, y);
+            let prod: u64 = jet::multiply_32(x, y);
+
+            assert!(jet::eq_64(prod, 20));
+        }
+    "#;
+
+    #[test]
+    fn test_arith_jet_trace_regression() {
+        let env = create_test_env();
+
+        let program = TemplateProgram::new(TEST_ARITHMETIC_JETS).unwrap();
+        let program = program.instantiate(Arguments::default(), true).unwrap();
+        let satisfied = program.satisfy(WitnessValues::default()).unwrap();
+
+        let (mut tracker, _, jet_store) = create_test_tracker(&satisfied.debug_symbols);
+
+        let _ = satisfied.redeem().prune_with_tracker(&env, &mut tracker);
+
+        let jets = jet_store.borrow();
+
+        assert_eq!(
+            jets.get("add_32").unwrap().0,
+            Some(vec!["5".to_string(), "4".to_string()])
+        );
+        assert_eq!(
+            jets.get("add_32").unwrap().1,
+            Some("(false, 9)".to_string())
+        );
+
+        assert_eq!(
+            jets.get("multiply_32").unwrap().0,
+            Some(vec!["5".to_string(), "4".to_string()])
+        );
+        assert_eq!(jets.get("multiply_32").unwrap().1, Some("20".to_string()));
+
+        assert_eq!(
+            jets.get("eq_64").unwrap().0,
+            Some(vec!["20".to_string(), "20".to_string()])
+        );
+        assert_eq!(jets.get("eq_64").unwrap().1, Some("true".to_string()));
     }
 }
