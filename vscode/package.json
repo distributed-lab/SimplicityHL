@@ -2,7 +2,7 @@
   "name": "simplicityhl",
   "displayName": "SimplicityHL Language Support",
   "description": "Syntax highlighting and autocompletion for SimplicityHL (Simfony) language",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "publisher": "Blockstream",
   "repository": {
     "type": "git",
@@ -13,9 +13,6 @@
   },
   "categories": [
     "Programming Languages"
-  ],
-  "activationEvents": [
-    "onLanguage:simplicityhl"
   ],
   "main": "dist/extension.js",
   "contributes": {
@@ -60,6 +57,12 @@
         "path": "./syntaxes/witness.tmLanguage.json"
       }
     ],
+    "snippets": [
+      {
+        "language": "simplicityhl",
+        "path": "./snippets/simplicityhl.json"
+      }
+    ],
     "configuration": {
       "title": "SimplicityHL",
       "properties": {
@@ -72,14 +75,140 @@
           "type": "boolean",
           "default": false,
           "description": "Do not autoupdate LSP server."
+        },
+        "simplicityhl.compiler.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the simc compiler. If empty, searches PATH and common locations."
+        },
+        "simplicityhl.build.autoSaveBeforeCompile": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically save the file before compiling."
         }
       }
     },
     "commands": [
       {
         "command": "simplicityhl.restartServer",
-        "title": "Restart server",
+        "title": "Restart Server",
         "category": "SimplicityHL"
+      },
+      {
+        "command": "simplicityhl.compileFile",
+        "title": "Compile Current File",
+        "category": "SimplicityHL",
+        "icon": "$(play)"
+      },
+      {
+        "command": "simplicityhl.compileFileDebug",
+        "title": "Compile with Debug Symbols",
+        "category": "SimplicityHL"
+      },
+      {
+        "command": "simplicityhl.compileWithWitness",
+        "title": "Compile with Witness",
+        "category": "SimplicityHL"
+      },
+      {
+        "command": "simplicityhl.compileJson",
+        "title": "Compile to JSON",
+        "category": "SimplicityHL"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "when": "resourceLangId == simplicityhl",
+          "command": "simplicityhl.compileFile",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "when": "resourceLangId == simplicityhl",
+          "command": "simplicityhl.compileFile",
+          "group": "1_modification"
+        },
+        {
+          "when": "resourceLangId == simplicityhl",
+          "command": "simplicityhl.compileWithWitness",
+          "group": "1_modification"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "simplicityhl.compileFile",
+          "when": "resourceLangId == simplicityhl"
+        },
+        {
+          "command": "simplicityhl.compileFileDebug",
+          "when": "resourceLangId == simplicityhl"
+        },
+        {
+          "command": "simplicityhl.compileWithWitness",
+          "when": "resourceLangId == simplicityhl"
+        },
+        {
+          "command": "simplicityhl.compileJson",
+          "when": "resourceLangId == simplicityhl"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "simplicityhl.compileFile",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "resourceLangId == simplicityhl"
+      }
+    ],
+    "taskDefinitions": [
+      {
+        "type": "simplicityhl",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": [
+              "compile",
+              "compile-debug",
+              "compile-with-witness"
+            ],
+            "description": "The compilation command to run"
+          },
+          "file": {
+            "type": "string",
+            "description": "The SimplicityHL file to compile (defaults to current file)"
+          },
+          "witnessFile": {
+            "type": "string",
+            "description": "The witness file to use (for compile-with-witness)"
+          }
+        }
+      }
+    ],
+    "problemMatchers": [
+      {
+        "name": "simplicityhl",
+        "owner": "simplicityhl",
+        "fileLocation": [
+          "absolute"
+        ],
+        "pattern": {
+          "regexp": "^Error:\\s+(.*)$",
+          "message": 1
+        },
+        "severity": "error"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "simplicityhl-icons",
+        "label": "SimplicityHL File Icons",
+        "path": "./icons/icon-theme.json"
       }
     ]
   },
