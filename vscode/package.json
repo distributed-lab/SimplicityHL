@@ -2,7 +2,7 @@
   "name": "simplicityhl",
   "displayName": "SimplicityHL Language Support",
   "description": "Syntax highlighting and autocompletion for SimplicityHL (Simfony) language",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "publisher": "Blockstream",
   "repository": {
     "type": "git",
@@ -166,11 +166,17 @@
     "taskDefinitions": [
       {
         "type": "simplicityhl",
-        "required": ["command"],
+        "required": [
+          "command"
+        ],
         "properties": {
           "command": {
             "type": "string",
-            "enum": ["compile", "compile-debug", "compile-with-witness"],
+            "enum": [
+              "compile",
+              "compile-debug",
+              "compile-with-witness"
+            ],
             "description": "The compilation command to run"
           },
           "file": {
@@ -188,7 +194,9 @@
       {
         "name": "simplicityhl",
         "owner": "simplicityhl",
-        "fileLocation": ["absolute"],
+        "fileLocation": [
+          "absolute"
+        ],
         "pattern": {
           "regexp": "^Error:\\s+(.*)$",
           "message": 1
