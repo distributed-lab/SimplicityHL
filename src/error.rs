@@ -349,6 +349,50 @@ where
     }
 }
 
+#[derive(Debug, Clone, Hash)]
+pub struct ErrorCollector {
+    /// File in which the error occurred.
+    file: Arc<str>,
+
+    /// Collected errors.
+    errors: Vec<RichError>,
+}
+
+impl ErrorCollector {
+    pub fn new(file: Arc<str>) -> Self {
+        Self {
+            file,
+            errors: Vec::new(),
+        }
+    }
+
+    /// Extend existing errors with slice of new errors.
+    pub fn update(&mut self, errors: impl IntoIterator<Item = RichError>) {
+        let new_errors = errors
+            .into_iter()
+            .map(|err| err.with_file(Arc::clone(&self.file)));
+
+        self.errors.extend(new_errors);
+    }
+
+    pub fn get(&self) -> &[RichError] {
+        &self.errors
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.get().is_empty()
+    }
+}
+
+impl fmt::Display for ErrorCollector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for err in self.get() {
+            writeln!(f, "{err}\n")?;
+        }
+        Ok(())
+    }
+}
+
 /// An individual error.
 ///
 /// Records _what_ happened but not where.
