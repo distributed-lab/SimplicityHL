@@ -213,6 +213,30 @@ pub fn lexer<'src>(
         .collect()
 }
 
+/// Lexes an input string into a stream of tokens with spans.
+///
+/// All comments in the input code are discarded.
+pub fn lex<'src>(input: &'src str) -> (Option<Tokens<'src>>, Vec<crate::error::RichError>) {
+    let (tokens, errors) = lexer().parse(input).into_output_errors();
+    (
+        tokens.map(|vec| {
+            vec.into_iter()
+                .map(|(tok, span)| (tok, crate::error::Span::from(span)))
+                .filter(|(tok, _)| !matches!(tok, Token::Comment | Token::BlockComment))
+                .collect::<Vec<_>>()
+        }),
+        errors
+            .iter()
+            .map(|err| {
+                crate::error::RichError::new(
+                    crate::error::Error::CannotParse(err.reason().to_string()),
+                    (*err.span()).into(),
+                )
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use chumsky::error::Rich;
