@@ -69,7 +69,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let include_debug_symbols = matches.get_flag("debug");
     let output_json = matches.get_flag("json");
 
-    let compiled = CompiledProgram::new(prog_text, Arguments::default(), include_debug_symbols)?;
+    let compiled =
+        match CompiledProgram::new(prog_text, Arguments::default(), include_debug_symbols) {
+            Ok(program) => program,
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        };
 
     #[cfg(feature = "serde")]
     let witness_opt = matches

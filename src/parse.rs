@@ -16,6 +16,7 @@ use chumsky::{extra, select, IterParser, Parser};
 use either::Either;
 use miniscript::iter::{Tree, TreeLike};
 
+use crate::error::ErrorCollector;
 use crate::error::{Error, RichError, Span};
 use crate::impl_eq_hash;
 use crate::lexer::Token;
@@ -870,6 +871,12 @@ pub trait ParseFromStr: Sized {
     fn parse_from_str(s: &str) -> Result<Self, RichError>;
 }
 
+/// Trait for parsing with collection of errors.
+pub trait ParseFromStrWithErrors: Sized {
+    /// Parse a value from the string `s` with Errors.
+    fn parse_from_str_with_errors(s: &str, handler: &mut ErrorCollector) -> Option<Self>;
+}
+
 /// Trait for generating parsers of themselves.
 ///
 /// Replacement for previous `PestParse` trait.
@@ -906,6 +913,34 @@ impl<A: ChumskyParse + std::fmt::Debug> ParseFromStr for A {
         } else {
             let err = parse_errs.first().unwrap().clone();
             Err(err)
+        }
+    }
+}
+
+impl<A: ChumskyParse + std::fmt::Debug> ParseFromStrWithErrors for A {
+    fn parse_from_str_with_errors(s: &str, handler: &mut ErrorCollector) -> Option<Self> {
+        let (tokens, lex_errs) = crate::lexer::lex(s);
+
+        handler.update(lex_errs);
+        let tokens = tokens?;
+
+        let (ast, parse_errs) = A::parser()
+            .map_with(|parsed, _| parsed)
+            .parse(
+                tokens
+                    .as_slice()
+                    .map((s.len()..s.len()).into(), |(t, s)| (t, s)),
+            )
+            .into_output_errors();
+
+        handler.update(parse_errs);
+
+        // TODO: We should return parsed result if we found errors, but because analyzing in `ast` module
+        // is not handling poisoned tree right now, we don't return parsed result
+        if handler.get().is_empty() {
+            ast
+        } else {
+            None
         }
     }
 }
