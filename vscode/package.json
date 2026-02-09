@@ -2,7 +2,7 @@
   "name": "simplicityhl",
   "displayName": "SimplicityHL Language Support",
   "description": "Syntax highlighting and autocompletion for SimplicityHL (Simfony) language",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "Blockstream",
   "repository": {
     "type": "git",
