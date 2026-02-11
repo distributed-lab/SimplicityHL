@@ -2,7 +2,7 @@ use base64::display::Base64Display;
 use base64::engine::general_purpose::STANDARD;
 use clap::{Arg, ArgAction, Command};
 
-use simplicityhl::{Arguments, CompiledProgram};
+use simplicityhl::CompiledProgram;
 use std::{env, fmt};
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
@@ -43,9 +43,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
             .arg(
                 Arg::new("wit_file")
+                    .long("wit")
+                    .short('w')
                     .value_name("WITNESS_FILE")
                     .action(ArgAction::Set)
                     .help("File containing the witness data"),
+            )
+            .arg(
+                Arg::new("args_file")
+                    .long("args")
+                    .short('a')
+                    .value_name("ARGUMENTS_FILE")
+                    .action(ArgAction::Set)
+                    .help("File containing the arguments data"),
             )
             .arg(
                 Arg::new("debug")
@@ -69,14 +79,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let include_debug_symbols = matches.get_flag("debug");
     let output_json = matches.get_flag("json");
 
-    let compiled =
-        match CompiledProgram::new(prog_text, Arguments::default(), include_debug_symbols) {
-            Ok(program) => program,
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-        };
+    #[cfg(feature = "serde")]
+    let args_opt: simplicityhl::Arguments = match matches.get_one::<String>("args_file") {
+        None => simplicityhl::Arguments::default(),
+        Some(args_file) => {
+            let args_path = std::path::Path::new(&args_file);
+            let args_text = std::fs::read_to_string(args_path).map_err(|e| e.to_string())?;
+            serde_json::from_str::<simplicityhl::Arguments>(&args_text)?
+        }
+    };
+    #[cfg(not(feature = "serde"))]
+    let args_opt: simplicityhl::Arguments = if matches.contains_id("args_file") {
+        return Err(
+            "Program was compiled without the 'serde' feature and cannot process .args files."
+                .into(),
+        );
+    } else {
+        simplicityhl::Arguments::default()
+    };
+
+    let compiled = match CompiledProgram::new(prog_text, args_opt, include_debug_symbols) {
+        Ok(program) => program,
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    };
 
     #[cfg(feature = "serde")]
     let witness_opt = matches
