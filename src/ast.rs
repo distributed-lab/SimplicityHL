@@ -160,6 +160,13 @@ impl Expression {
     pub fn span(&self) -> &Span {
         &self.span
     }
+    pub fn error(span: Span) -> Self {
+        Self {
+            inner: ExpressionInner::Error,
+            ty: ResolvedType::error(),
+            span,
+        }
+    }
 }
 
 /// Variant of an expression.
@@ -171,6 +178,9 @@ pub enum ExpressionInner {
     /// Then, the block returns the value of its final expression.
     /// The block returns nothing (unit) if there is no final expression.
     Block(Arc<[Statement]>, Option<Arc<Expression>>),
+    /// An error expression state, which indicates that parser didn't recognize this expression or
+    /// analyzer failed to analyze this expression.
+    Error,
 }
 
 /// A single expression directly returns its value.
@@ -474,6 +484,7 @@ impl TreeLike for ExprTree<'_> {
                     Tree::Unary(Self::Block(statements, maybe_expr))
                 }
                 ExpressionInner::Single(single) => Tree::Unary(Self::Single(single)),
+                ExpressionInner::Error => Tree::Nullary,
             },
             Self::Block(statements, maybe_expr) => Tree::Nary(
                 statements
@@ -913,6 +924,7 @@ impl AbstractSyntaxTree for Expression {
                     span: *from.as_ref(),
                 })
             }
+            parse::ExpressionInner::Error => Ok(Self::error(*from.as_ref())),
         }
     }
 }
