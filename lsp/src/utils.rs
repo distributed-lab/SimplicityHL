@@ -1,5 +1,3 @@
-use std::num::NonZeroUsize;
-
 use miniscript::iter::TreeLike;
 
 use crate::completion;
@@ -10,16 +8,24 @@ use tower_lsp_server::lsp_types::{
     self, MarkupContent, MarkupKind, ParameterInformation, ParameterLabel, SignatureInformation,
 };
 
-fn position_le(a: &simplicityhl::error::Position, b: &simplicityhl::error::Position) -> bool {
-    (a.line < b.line) || (a.line == b.line && a.col <= b.col)
-}
-
-fn position_ge(a: &simplicityhl::error::Position, b: &simplicityhl::error::Position) -> bool {
-    (a.line > b.line) || (a.line == b.line && a.col >= b.col)
-}
-
 pub fn span_contains(a: &simplicityhl::error::Span, b: &simplicityhl::error::Span) -> bool {
-    position_le(&a.start, &b.start) && position_ge(&a.end, &b.end)
+    a.start <= b.start && a.end >= b.end
+}
+
+pub fn offset_to_position(offset: usize, rope: &Rope) -> Result<lsp_types::Position, LspError> {
+    let line = rope.try_char_to_line(offset)?;
+    let first_char_of_line = rope.try_line_to_char(line)?;
+    let column = offset - first_char_of_line;
+    Ok(lsp_types::Position::new(
+        <u32>::try_from(line)?,
+        <u32>::try_from(column)?,
+    ))
+}
+
+pub fn position_to_offset(position: lsp_types::Position, rope: &Rope) -> Result<usize, LspError> {
+    let line_char_offset = rope.try_line_to_char(position.line as usize)?;
+    let slice = rope.slice(0..line_char_offset + position.character as usize);
+    Ok(slice.len_bytes())
 }
 
 /// Convert [`simplicityhl::error::Span`] to [`tower_lsp_server::lsp_types::Position`]
@@ -29,21 +35,11 @@ pub fn span_contains(a: &simplicityhl::error::Span, b: &simplicityhl::error::Spa
 /// `Position` required for diagnostic starts with zero
 pub fn span_to_positions(
     span: &simplicityhl::error::Span,
+    rope: &Rope,
 ) -> Result<(lsp_types::Position, lsp_types::Position), LspError> {
-    let start_line = u32::try_from(span.start.line.get())?;
-    let start_col = u32::try_from(span.start.col.get())?;
-    let end_line = u32::try_from(span.end.line.get())?;
-    let end_col = u32::try_from(span.end.col.get())?;
-
     Ok((
-        lsp_types::Position {
-            line: start_line - 1,
-            character: start_col - 1,
-        },
-        lsp_types::Position {
-            line: end_line - 1,
-            character: end_col - 1,
-        },
+        offset_to_position(span.start, rope)?,
+        offset_to_position(span.end, rope)?,
     ))
 }
 
@@ -52,20 +48,11 @@ pub fn span_to_positions(
 /// Useful when [`tower_lsp_server::lsp_types::Position`] represents some singular point.
 pub fn position_to_span(
     position: lsp_types::Position,
+    rope: &Rope,
 ) -> Result<simplicityhl::error::Span, LspError> {
-    let start_line = NonZeroUsize::try_from((position.line + 1) as usize)?;
-    let start_col = NonZeroUsize::try_from((position.character + 1) as usize)?;
+    let start_line = position_to_offset(position, rope)?;
 
-    Ok(simplicityhl::error::Span {
-        start: simplicityhl::error::Position {
-            line: start_line,
-            col: start_col,
-        },
-        end: simplicityhl::error::Position {
-            line: start_line,
-            col: start_col,
-        },
-    })
+    Ok(simplicityhl::error::Span::new(start_line, start_line))
 }
 
 /// Get document comments, using lines above given line index. Only used to
@@ -160,11 +147,11 @@ pub fn find_function_name_range(
     function: &parse::Function,
     text: &Rope,
 ) -> Result<lsp_types::Range, LspError> {
-    let start_line = usize::from(function.span().start.line) - 1;
+    let start_line = offset_to_position(function.span().start, text)?.line;
     let Some((line, character)) =
         text.lines()
             .enumerate()
-            .skip(start_line)
+            .skip(start_line as usize)
             .find_map(|(i, line)| {
                 line.to_string()
                     .find(function.name().as_inner())
@@ -199,18 +186,14 @@ pub fn get_call_span(
 ) -> Result<simplicityhl::error::Span, LspError> {
     let length = call.name().to_string().len();
 
-    let end_column = usize::from(call.span().start.col) + length;
-
     Ok(simplicityhl::error::Span {
         start: call.span().start,
-        end: simplicityhl::error::Position {
-            line: call.span().start.line,
-            col: NonZeroUsize::try_from(end_column)?,
-        },
+        end: call.span().start + length,
     })
 }
 
 pub fn find_all_references<'a>(
+    text: &Rope,
     functions: &'a [&'a parse::Function],
     call_name: &CallName,
 ) -> Result<Vec<lsp_types::Range>, LspError> {
@@ -231,7 +214,7 @@ pub fn find_all_references<'a>(
                 .collect::<Vec<_>>()
         })
         .map(|span| {
-            let (start, end) = span_to_positions(&span)?;
+            let (start, end) = span_to_positions(&span, text)?;
             Ok(lsp_types::Range { start, end })
         })
         .collect::<Result<Vec<_>, LspError>>()
